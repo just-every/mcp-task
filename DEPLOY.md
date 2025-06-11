@@ -47,12 +47,40 @@ npm publish --access public --otp=123456
 
 ## Deployment Process
 
-1. Push to main branch
-2. GitHub Actions will:
+### Option 1: Automatic (Requires GH_PAT)
+
+1. Add a Personal Access Token with `repo` scope to repository secrets as `GH_PAT`
+2. Push to main branch
+3. GitHub Actions will automatically:
    - Build and test
    - Bump version
    - Publish to npm
    - Create git tag
+
+### Option 2: Manual Workflow Dispatch
+
+1. Go to Actions → Simple Release → Run workflow
+2. Select version type (patch/minor/major)
+3. GitHub Actions will:
+   - Build and test
+   - Publish to npm with new version
+   - Create GitHub release
+
+### Option 3: Local Publishing
+
+```bash
+# Bump version locally
+npm version patch
+
+# Build
+npm run build
+
+# Publish
+npm publish --access public
+
+# Push tags
+git push --follow-tags
+```
 
 The package will be available at:
 ```
