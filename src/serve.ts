@@ -1,110 +1,226 @@
 #!/usr/bin/env node
-import { FastMCP } from 'fastmcp';
-import { z } from 'zod';
-import { fetchMarkdown } from './internal/fetchMarkdown.js';
-import { readdir, stat } from 'fs/promises';
-import { join } from 'path';
+import { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import {
+  CallToolRequestSchema,
+  ListToolsRequestSchema,
+  ListResourcesRequestSchema,
+  ReadResourceRequestSchema,
+  Tool,
+  Resource,
+} from "@modelcontextprotocol/sdk/types.js";
 
-const server = new FastMCP({
-  name: 'read-website-fast',
-  version: '0.1.0',
-  capabilities: {
-    tools: {},
-    resources: {}
-  }
-});
+// Lazy load heavy dependencies
+let fetchMarkdownModule: any;
+let fsPromises: any;
+let pathModule: any;
 
-// Tool: read_website_fast
-server.addTool({
-  name: 'read_website_fast',
-  description: 'Quickly reads webpages and converts to markdown for fast, token efficient web scraping',
-  parameters: z.object({
-    url: z.string().describe('HTTP/HTTPS URL to fetch and convert to markdown'),
-    depth: z.number().optional().default(0).describe('Crawl depth (0 = single page)'),
-    respectRobots: z.boolean().optional().default(true).describe('Whether to respect robots.txt')
-  }),
-  execute: async (args) => {
-    const { url, depth, respectRobots } = args;
-    const result = await fetchMarkdown(url, { depth, respectRobots });
-    
-    if (result.error) {
-      throw new Error(result.error);
-    }
-    
-    return result.markdown;
+const server = new Server(
+  {
+    name: "read-website-fast",
+    version: "0.1.0",
   },
+  {
+    capabilities: {
+      tools: {},
+      resources: {},
+    },
+  }
+);
+
+// Tool definition
+const READ_WEBSITE_TOOL: Tool = {
+  name: "read_website_fast",
+  description: "Quickly reads webpages and converts to markdown for fast, token efficient web scraping",
+  inputSchema: {
+    type: "object",
+    properties: {
+      url: {
+        type: "string",
+        description: "HTTP/HTTPS URL to fetch and convert to markdown",
+      },
+      depth: {
+        type: "number",
+        description: "Crawl depth (0 = single page)",
+        default: 0,
+      },
+      respectRobots: {
+        type: "boolean",
+        description: "Whether to respect robots.txt",
+        default: true,
+      },
+    },
+    required: ["url"],
+  },
+};
+
+// Resources definitions
+const RESOURCES: Resource[] = [
+  {
+    uri: "read-website-fast://status",
+    name: "Cache Status",
+    mimeType: "application/json",
+    description: "Get cache status information",
+  },
+  {
+    uri: "read-website-fast://clear-cache",
+    name: "Clear Cache",
+    mimeType: "application/json",
+    description: "Clear the cache directory",
+  },
+];
+
+// Handle tool listing
+server.setRequestHandler(ListToolsRequestSchema, async () => ({
+  tools: [READ_WEBSITE_TOOL],
+}));
+
+// Handle tool execution
+server.setRequestHandler(CallToolRequestSchema, async (request) => {
+  if (request.params.name !== "read_website_fast") {
+    throw new Error(`Unknown tool: ${request.params.name}`);
+  }
+
+  // Lazy load the module on first use
+  if (!fetchMarkdownModule) {
+    fetchMarkdownModule = await import("./internal/fetchMarkdown.js");
+  }
+
+  const args = request.params.arguments as any;
+  const result = await fetchMarkdownModule.fetchMarkdown(args.url, {
+    depth: args.depth ?? 0,
+    respectRobots: args.respectRobots ?? true,
+  });
+
+  if (result.error) {
+    throw new Error(result.error);
+  }
+
+  return {
+    content: [{ type: "text", text: result.markdown }],
+  };
 });
 
-// Resource: cache status
-server.addResource({
-  uri: 'read-website-fast://status',
-  name: 'Cache Status',
-  mimeType: 'application/json',
-  async load() {
+// Handle resource listing
+server.setRequestHandler(ListResourcesRequestSchema, async () => ({
+  resources: RESOURCES,
+}));
+
+// Handle resource reading
+server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
+  const uri = request.params.uri;
+
+  // Lazy load fs and path modules
+  if (!fsPromises) {
+    fsPromises = await import("fs/promises");
+  }
+  if (!pathModule) {
+    pathModule = await import("path");
+  }
+
+  if (uri === "read-website-fast://status") {
     try {
-      const cacheDir = '.cache';
-      const files = await readdir(cacheDir).catch(() => []);
-      
+      const cacheDir = ".cache";
+      const files = await fsPromises.readdir(cacheDir).catch(() => []);
+
       let totalSize = 0;
       for (const file of files) {
-        const stats = await stat(join(cacheDir, file)).catch(() => null);
+        const stats = await fsPromises
+          .stat(pathModule.join(cacheDir, file))
+          .catch(() => null);
         if (stats) {
           totalSize += stats.size;
         }
       }
-      
+
       return {
-        text: JSON.stringify({
-          cacheSize: totalSize,
-          cacheFiles: files.length,
-          cacheSizeFormatted: `${(totalSize / 1024 / 1024).toFixed(2)} MB`
-        }, null, 2)
+        contents: [
+          {
+            uri,
+            mimeType: "application/json",
+            text: JSON.stringify(
+              {
+                cacheSize: totalSize,
+                cacheFiles: files.length,
+                cacheSizeFormatted: `${(totalSize / 1024 / 1024).toFixed(2)} MB`,
+              },
+              null,
+              2
+            ),
+          },
+        ],
       };
     } catch (error) {
       return {
-        text: JSON.stringify({
-          error: 'Failed to get cache status',
-          message: error instanceof Error ? error.message : 'Unknown error'
-        }, null, 2)
+        contents: [
+          {
+            uri,
+            mimeType: "application/json",
+            text: JSON.stringify(
+              {
+                error: "Failed to get cache status",
+                message: error instanceof Error ? error.message : "Unknown error",
+              },
+              null,
+              2
+            ),
+          },
+        ],
       };
     }
   }
-});
 
-// Resource: clear cache
-server.addResource({
-  uri: 'read-website-fast://clear-cache',
-  name: 'Clear Cache',
-  mimeType: 'application/json',
-  async load() {
+  if (uri === "read-website-fast://clear-cache") {
     try {
-      const { rm } = await import('fs/promises');
-      await rm('.cache', { recursive: true, force: true });
-      
+      await fsPromises.rm(".cache", { recursive: true, force: true });
+
       return {
-        text: JSON.stringify({
-          status: 'success',
-          message: 'Cache cleared successfully'
-        }, null, 2)
+        contents: [
+          {
+            uri,
+            mimeType: "application/json",
+            text: JSON.stringify(
+              {
+                status: "success",
+                message: "Cache cleared successfully",
+              },
+              null,
+              2
+            ),
+          },
+        ],
       };
     } catch (error) {
       return {
-        text: JSON.stringify({
-          status: 'error',
-          message: error instanceof Error ? error.message : 'Failed to clear cache'
-        }, null, 2)
+        contents: [
+          {
+            uri,
+            mimeType: "application/json",
+            text: JSON.stringify(
+              {
+                status: "error",
+                message: error instanceof Error ? error.message : "Failed to clear cache",
+              },
+              null,
+              2
+            ),
+          },
+        ],
       };
     }
   }
+
+  throw new Error(`Unknown resource: ${uri}`);
 });
 
-// Run the MCP server (stdio by default)
-server.start({ 
-  transportType: 'stdio',
-  stdio: {
-    stderr: process.stderr
-  }
-}).catch((error) => {
-  console.error('Failed to start MCP server:', error);
+// Start the server
+async function runServer() {
+  const transport = new StdioServerTransport();
+  await server.connect(transport);
+  console.error("read-website-fast MCP server running");
+}
+
+runServer().catch((error) => {
+  console.error("Server error:", error);
   process.exit(1);
 });

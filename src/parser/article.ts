@@ -26,7 +26,19 @@ export function extractArticle(dom: JSDOM): Article | null {
     
     // If Readability returns substantial content, use it
     if (article && article.content && article.content.trim().length > 500) {
-      return { ...article, baseUrl };
+      return {
+        title: article.title || 'Untitled',
+        content: article.content || '',
+        textContent: article.textContent || '',
+        length: article.length || 0,
+        excerpt: article.excerpt || '',
+        byline: article.byline || null,
+        dir: article.dir || null,
+        lang: article.lang || null,
+        siteName: article.siteName || null,
+        publishedTime: article.publishedTime || null,
+        baseUrl
+      };
     }
   }
   

@@ -2,7 +2,7 @@
 
 Existing MCP web crawlers are slow and consume large quantities of tokens. This pauses the development process and provides incomplete results as LLMs need to parse whole web pages.
 
-This MCP packages fetches web pages locally, strips noise, and converts content to clean Markdown while preserving links. Designed for Claude Code, IDEs and LLM pipelines with minimal token footprint. Crawl sites locally with minimal dependencies.
+This MCP package fetches web pages locally, strips noise, and converts content to clean Markdown while preserving links. Designed for Claude Code, IDEs and LLM pipelines with minimal token footprint. Crawl sites locally with minimal dependencies.
 
 ## MCP Server Configuration
 
@@ -13,19 +13,19 @@ This tool can be used as an MCP (Model Context Protocol) server with Claude Desk
 ### Claude Code
 
 ```bash
-claude mcp add read-website-fast -s user -- npx -y github:just-every/mcp-read-website-fast serve
+claude mcp add read-website-fast -s user -- npx -y @just-every/mcp-read-website-fast
 ```
 
 ### VS Code
 
 ```bash
-code --add-mcp '{"name":"read-website-fast","command":"npx","args":["-y","github:just-every/mcp-read-website-fast","serve"]}'
+code --add-mcp '{"name":"read-website-fast","command":"npx","args":["-y","@just-every/mcp-read-website-fast"]}'
 ```
 
 ### Cursor
 
 ```bash
-cursor://anysphere.cursor-deeplink/mcp/install?name=read-website-fast&config=eyJyZWFkLXdlYnNpdGUtZmFzdCI6eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsImdpdGh1YjpqdXN0LWV2ZXJ5L21jcC1yZWFkLXdlYnNpdGUtZmFzdCIsInNlcnZlIl19fQ==
+cursor://anysphere.cursor-deeplink/mcp/install?name=read-website-fast&config=eyJyZWFkLXdlYnNpdGUtZmFzdCI6eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsIkBqdXN0LWV2ZXJ5L21jcC1yZWFkLXdlYnNpdGUtZmFzdCJdfX0=
 ```
 
 ### JetBrains IDEs
@@ -35,7 +35,7 @@ Settings → Tools → AI Assistant → Model Context Protocol (MCP) → Add
 Choose “As JSON” and paste:
 
 ```json
-{"command":"npx","args":["-y","github:just-every/mcp-read-website-fast","serve"]}
+{"command":"npx","args":["-y","@just-every/mcp-read-website-fast"]}
 ```
 
 Or, in the chat window, type /add and fill in the same JSON—both paths land the server in a single step. ￼
@@ -47,7 +47,7 @@ Or, in the chat window, type /add and fill in the same JSON—both paths land th
   "mcpServers": {
     "read-website-fast": {
       "command": "npx",
-      "args": ["-y", "github:just-every/mcp-read-website-fast", "serve"]
+      "args": ["-y", "@just-every/mcp-read-website-fast"]
     }
   }
 }
@@ -59,6 +59,7 @@ Drop this into your client’s mcp.json (e.g. .vscode/mcp.json, ~/.cursor/mcp.js
 
 ## Features
 
+- **Fast startup** using official MCP SDK with lazy loading for optimal performance
 - **Content extraction** using Mozilla Readability (same as Firefox Reader View)
 - **HTML to Markdown** conversion with Turndown + GFM support
 - **Smart caching** with SHA-256 hashed URLs

@@ -1,23 +1,40 @@
 #!/usr/bin/env node
 
-// Use tsx to register TypeScript support
-import 'tsx/esm';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import { existsSync } from 'fs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const args = process.argv.slice(2);
 
 async function main() {
-  if (args[0] === 'serve') {
-    // Dynamically import and run the serve module
-    const servePath = join(__dirname, '..', 'src', 'serve.ts');
-    await import(servePath);
+  // Default to 'serve' if no arguments provided (for MCP usage)
+  const command = args[0] || 'serve';
+  
+  // Check if compiled dist exists
+  const distExists = existsSync(join(__dirname, '..', 'dist'));
+  
+  if (distExists) {
+    // Use compiled JavaScript for production (fast startup)
+    if (command === 'serve') {
+      const servePath = join(__dirname, '..', 'dist', 'serve.js');
+      await import(servePath);
+    } else {
+      const cliPath = join(__dirname, '..', 'dist', 'index.js');
+      await import(cliPath);
+    }
   } else {
-    // Dynamically import and run the CLI module
-    const cliPath = join(__dirname, '..', 'src', 'index.ts');
-    await import(cliPath);
+    // Fall back to TypeScript with tsx for development
+    await import('tsx/esm');
+    
+    if (command === 'serve') {
+      const servePath = join(__dirname, '..', 'src', 'serve.ts');
+      await import(servePath);
+    } else {
+      const cliPath = join(__dirname, '..', 'src', 'index.ts');
+      await import(cliPath);
+    }
   }
 }
 
