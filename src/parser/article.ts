@@ -5,15 +5,17 @@ import { Article } from '../types.js';
 export function extractArticle(dom: JSDOM): Article | null {
   const document = dom.window.document;
   
-  // Check if this looks like an article page
-  const hasArticleIndicators = 
-    document.querySelector('article') !== null ||
-    document.querySelector('[itemtype*="Article"]') !== null ||
-    document.querySelector('meta[property="article:published_time"]') !== null ||
-    document.querySelector('.post-content, .entry-content, .article-content') !== null;
+  // Check if this looks like a blog/article page with clear article structure
+  const articleParagraph = document.querySelector('article p');
+  const hasStrongArticleIndicators = 
+    (document.querySelector('article') !== null && 
+     articleParagraph?.textContent && articleParagraph.textContent.length > 200) ||
+    document.querySelector('[itemtype*="BlogPosting"]') !== null ||
+    document.querySelector('[itemtype*="NewsArticle"]') !== null ||
+    document.querySelector('meta[property="article:published_time"]') !== null;
   
-  // Only use Readability for actual article pages
-  if (hasArticleIndicators) {
+  // Only use Readability for clear article/blog pages
+  if (hasStrongArticleIndicators) {
     // Clone document to avoid modifying the original
     const documentClone = document.cloneNode(true) as Document;
     
@@ -21,13 +23,13 @@ export function extractArticle(dom: JSDOM): Article | null {
     const reader = new Readability(documentClone);
     const article = reader.parse();
     
-    // If Readability returns content, check if it's substantial
-    if (article && article.content && article.content.trim().length > 100) {
+    // If Readability returns substantial content, use it
+    if (article && article.content && article.content.trim().length > 500) {
       return article;
     }
   }
   
-  // For non-article pages or when Readability fails, extract content manually
+  // For all other pages (homepages, product pages, etc), extract all content
   return extractContentManually(dom);
 }
 
@@ -45,24 +47,20 @@ function extractContentManually(dom: JSDOM): Article | null {
                  document.querySelector('[rel="author"]')?.textContent || 
                  null;
   
-  // Remove script and style elements
+  // Clone body and only remove script/style elements
   const contentClone = document.body.cloneNode(true) as HTMLElement;
-  contentClone.querySelectorAll('script, style, noscript').forEach(el => el.remove());
   
-  // Remove only the most obvious non-content elements
+  // Only remove truly non-text elements
   const selectorsToRemove = [
-    'script', 'style', 'noscript',
-    '.cookie-banner', '.cookie-notice', '#cookie-banner',
-    '.advertisement', '.ads', '.ad-container',
-    '[aria-hidden="true"]'
+    'script', 'style', 'noscript'
   ];
   
   selectorsToRemove.forEach(selector => {
     contentClone.querySelectorAll(selector).forEach(el => el.remove());
   });
   
-  // Try to find main content areas - use the whole body if no specific content area
-  const mainContent = contentClone.querySelector('main, article, [role="main"], #main, .main, .wrapper, .container') || contentClone;
+  // Use the entire body content
+  const mainContent = contentClone;
   
   // Preserve structure and links
   const content = mainContent.innerHTML;
