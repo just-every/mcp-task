@@ -4,9 +4,7 @@
   "description": "Markdown Content Preprocessor - Fetch web pages, extract content, convert to clean Markdown",
   "main": "dist/index.js",
   "bin": {
-    "mcp": "./dist/index.js",
-    "mcp-read-website": "./dist/index.js",
-    "mcp-read-website-serve": "./dist/serve.js"
+    "mcp-read-website": "./bin/mcp-read-website.js"
   },
   "scripts": {
     "build": "tsc",
