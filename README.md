@@ -13,11 +13,11 @@ Add to your MCP client configuration file:
 ```json
 {
   "mcpServers": {
-    "fast-read-website": {
+    "read-website-fast": {
       "command": "npx",
       "args": [
         "-y",
-        "github:just-every/mcp-fast-read-website",
+        "github:just-every/mcp-read-website-fast",
         "serve"
       ]
     }
@@ -33,7 +33,7 @@ Add to your MCP client configuration file:
 
 ### Available Tools
 
-- `fast_read_website` - Fetches a webpage and converts it to clean markdown
+- `read_website_fast` - Fetches a webpage and converts it to clean markdown
   - Parameters:
     - `url` (required): The HTTP/HTTPS URL to fetch
     - `depth` (optional): Crawl depth (0 = single page)
@@ -41,8 +41,8 @@ Add to your MCP client configuration file:
 
 ### Available Resources
 
-- `fast-read-website://status` - Get cache statistics
-- `fast-read-website://clear-cache` - Clear the cache directory
+- `read-website-fast://status` - Get cache statistics
+- `read-website-fast://clear-cache` - Clear the cache directory
 
 ## Features
 

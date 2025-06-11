@@ -6,13 +6,13 @@ import { readdir, stat } from 'fs/promises';
 import { join } from 'path';
 
 const server = new FastMCP({
-  name: 'fast-read-website',
+  name: 'read-website-fast',
   version: '0.1.0'
 });
 
-// Tool: fast_read_website
+// Tool: read_website_fast
 server.addTool({
-  name: 'fast_read_website',
+  name: 'read_website_fast',
   description: 'Quickly reads webpages and converts to markdown for fast, token efficient web scraping',
   parameters: z.object({
     url: z.string().describe('HTTP/HTTPS URL to fetch and convert to markdown'),
@@ -33,7 +33,7 @@ server.addTool({
 
 // Resource: cache status
 server.addResource({
-  uri: 'fast-read-website://status',
+  uri: 'read-website-fast://status',
   name: 'Cache Status',
   mimeType: 'application/json',
   async load() {
@@ -69,7 +69,7 @@ server.addResource({
 
 // Resource: clear cache
 server.addResource({
-  uri: 'fast-read-website://clear-cache',
+  uri: 'read-website-fast://clear-cache',
   name: 'Clear Cache',
   mimeType: 'application/json',
   async load() {
