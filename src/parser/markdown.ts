@@ -1,6 +1,51 @@
 import TurndownService from 'turndown';
 // @ts-ignore - turndown-plugin-gfm doesn't have types
 import { gfm } from 'turndown-plugin-gfm';
+import { JSDOM } from 'jsdom';
+
+function convertRelativeUrls(html: string, baseUrl: string): string {
+  try {
+    const dom = new JSDOM(html, { url: baseUrl });
+    const document = dom.window.document;
+    
+    // Convert all relative URLs in links
+    document.querySelectorAll('a[href]').forEach(link => {
+      const href = link.getAttribute('href');
+      if (href && !href.startsWith('http://') && !href.startsWith('https://') && 
+          !href.startsWith('//') && !href.startsWith('mailto:') && 
+          !href.startsWith('tel:') && !href.startsWith('javascript:') &&
+          !href.startsWith('#')) {
+        try {
+          const absoluteUrl = new URL(href, baseUrl).href;
+          link.setAttribute('href', absoluteUrl);
+        } catch (e) {
+          // Keep original if URL construction fails
+        }
+      }
+    });
+    
+    // Convert all relative URLs in images
+    document.querySelectorAll('img[src]').forEach(img => {
+      const src = img.getAttribute('src');
+      if (src && !src.startsWith('http://') && !src.startsWith('https://') && 
+          !src.startsWith('//') && !src.startsWith('data:')) {
+        try {
+          const absoluteUrl = new URL(src, baseUrl).href;
+          img.setAttribute('src', absoluteUrl);
+        } catch (e) {
+          // Keep original if URL construction fails
+        }
+      }
+    });
+    
+    // Return the full document HTML to preserve the converted URLs
+    const bodyElement = document.body || document.documentElement;
+    return bodyElement ? bodyElement.innerHTML : html;
+  } catch (e) {
+    // If conversion fails, return original HTML
+    return html;
+  }
+}
 
 export function createTurndownService(): TurndownService {
   const turndown = new TurndownService({
@@ -25,31 +70,6 @@ export function createTurndownService(): TurndownService {
 
   // Use GFM plugin for tables, strikethrough, etc.
   turndown.use(gfm);
-
-  // Custom rule: ensure links are preserved
-  turndown.addRule('preserveLinks', {
-    filter: 'a',
-    replacement: (content, node) => {
-      const el = node as HTMLAnchorElement;
-      const href = el.getAttribute('href');
-      const title = el.getAttribute('title');
-      
-      if (!href) return content;
-      
-      // Clean up the content
-      const linkText = content.trim() || href;
-      
-      // Handle different link types
-      if (href.startsWith('mailto:') || href.startsWith('tel:') || href.startsWith('javascript:')) {
-        return linkText;
-      }
-      
-      if (title) {
-        return `[${linkText}](${href} "${title}")`;
-      }
-      return `[${linkText}](${href})`;
-    }
-  });
 
   // Custom rule: preserve media placeholders
   turndown.addRule('media', {
@@ -99,7 +119,7 @@ export function htmlToMarkdown(html: string): string {
   return markdown;
 }
 
-export function formatArticleMarkdown(article: { title: string; content: string; byline?: string | null }): string {
+export function formatArticleMarkdown(article: { title: string; content: string; byline?: string | null; baseUrl?: string }): string {
   try {
     const turndown = createTurndownService();
     let markdown = '';
@@ -115,7 +135,12 @@ export function formatArticleMarkdown(article: { title: string; content: string;
     
     // Try to convert content
     try {
-      markdown += turndown.turndown(article.content);
+      // Pre-process HTML to convert relative URLs if baseUrl is provided
+      const processedContent = article.baseUrl 
+        ? convertRelativeUrls(article.content, article.baseUrl)
+        : article.content;
+      
+      markdown += turndown.turndown(processedContent);
     } catch (conversionError) {
       console.error('Error converting HTML to markdown:', conversionError);
       // Fallback: extract text content if markdown conversion fails

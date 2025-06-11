@@ -4,6 +4,7 @@ import { Article } from '../types.js';
 
 export function extractArticle(dom: JSDOM): Article | null {
   const document = dom.window.document;
+  const baseUrl = dom.window.location.href;
   
   // Check if this looks like a blog/article page with clear article structure
   const articleParagraph = document.querySelector('article p');
@@ -25,7 +26,7 @@ export function extractArticle(dom: JSDOM): Article | null {
     
     // If Readability returns substantial content, use it
     if (article && article.content && article.content.trim().length > 500) {
-      return article;
+      return { ...article, baseUrl };
     }
   }
   
@@ -36,6 +37,7 @@ export function extractArticle(dom: JSDOM): Article | null {
 function extractContentManually(dom: JSDOM): Article | null {
   try {
     const document = dom.window.document;
+    const baseUrl = dom.window.location.href;
     
     // Get title - try multiple sources
     const title = document.querySelector('title')?.textContent || 
@@ -64,7 +66,8 @@ function extractContentManually(dom: JSDOM): Article | null {
         length: html.length,
         siteName: null,
         textContent: document.documentElement?.textContent || '',
-        publishedTime: null
+        publishedTime: null,
+        baseUrl
       };
     }
     
@@ -100,7 +103,8 @@ function extractContentManually(dom: JSDOM): Article | null {
       length: content.length,
       siteName: null,
       textContent: mainContent.textContent || '',
-      publishedTime: null
+      publishedTime: null,
+      baseUrl
     };
   } catch (error) {
     // Last resort - try to get any text content
@@ -115,7 +119,8 @@ function extractContentManually(dom: JSDOM): Article | null {
       length: 0,
       siteName: null,
       textContent: dom.window.document.body?.textContent || '',
-      publishedTime: null
+      publishedTime: null,
+      baseUrl: dom.window.location.href
     };
   }
 }

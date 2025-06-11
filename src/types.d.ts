@@ -19,6 +19,7 @@ export interface Article {
   siteName: string | null;
   lang: string | null;
   publishedTime: string | null;
+  baseUrl?: string;
 }
 
 export interface CrawlResult {
