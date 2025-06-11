@@ -1,12 +1,27 @@
-# MCP Read JustEvery Website
+# @just-every/mcp-read-website-fast
+
+Fast, token-efficient web content extraction for AI agents - converts websites to clean Markdown.
+
+[![npm version](https://badge.fury.io/js/@just-every%2Fmcp-read-website-fast.svg)](https://www.npmjs.com/package/@just-every/mcp-read-website-fast)
+[![GitHub Actions](https://github.com/just-every/mcp-read-website-fast/workflows/Release/badge.svg)](https://github.com/just-every/mcp-read-website-fast/actions)
+
+## Overview
 
 Existing MCP web crawlers are slow and consume large quantities of tokens. This pauses the development process and provides incomplete results as LLMs need to parse whole web pages.
 
 This MCP package fetches web pages locally, strips noise, and converts content to clean Markdown while preserving links. Designed for Claude Code, IDEs and LLM pipelines with minimal token footprint. Crawl sites locally with minimal dependencies.
 
-## MCP Server Configuration
+## Features
 
-This tool can be used as an MCP (Model Context Protocol) server with Claude Desktop, Cursor, VS Code, and other compatible clients.
+- **Fast startup** using official MCP SDK with lazy loading for optimal performance
+- **Content extraction** using Mozilla Readability (same as Firefox Reader View)
+- **HTML to Markdown** conversion with Turndown + GFM support
+- **Smart caching** with SHA-256 hashed URLs
+- **Polite crawling** with robots.txt support and rate limiting
+- **Concurrent fetching** with configurable depth crawling
+- **Stream-first design** for low memory usage
+- **Link preservation** for knowledge graphs
+- **Optional chunking** for downstream processing
 
 ## Installation
 
@@ -159,6 +174,32 @@ npm run typecheck
 # Linting
 npm run lint
 ```
+
+## Contributing
+
+Contributions are welcome! Please:
+
+1. Fork the repository
+2. Create a feature branch
+3. Add tests for new functionality
+4. Submit a pull request
+
+## Troubleshooting
+
+### Cache Issues
+```bash
+npm run dev clear-cache
+```
+
+### Timeout Errors
+- Increase timeout with `-t` flag
+- Check network connectivity
+- Verify URL is accessible
+
+### Content Not Extracted
+- Some sites block automated access
+- Try custom user agent with `-u` flag
+- Check if site requires JavaScript (not supported)
 
 ## License
 
