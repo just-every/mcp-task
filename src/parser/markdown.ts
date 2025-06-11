@@ -10,11 +10,46 @@ export function createTurndownService(): TurndownService {
     emDelimiter: '_',
     bulletListMarker: '-',
     strongDelimiter: '**',
-    hr: '---'
+    hr: '---',
+    // Preserve more content
+    blankReplacement: (_content, node) => {
+      return (node as any).isBlock ? '\n\n' : '';
+    },
+    keepReplacement: (content, node) => {
+      return (node as any).isBlock ? '\n\n' + content + '\n\n' : content;
+    },
+    defaultReplacement: (content, node) => {
+      return (node as any).isBlock ? '\n\n' + content + '\n\n' : content;
+    }
   });
 
   // Use GFM plugin for tables, strikethrough, etc.
   turndown.use(gfm);
+
+  // Custom rule: ensure links are preserved
+  turndown.addRule('preserveLinks', {
+    filter: 'a',
+    replacement: (content, node) => {
+      const el = node as HTMLAnchorElement;
+      const href = el.getAttribute('href');
+      const title = el.getAttribute('title');
+      
+      if (!href) return content;
+      
+      // Clean up the content
+      const linkText = content.trim() || href;
+      
+      // Handle different link types
+      if (href.startsWith('mailto:') || href.startsWith('tel:') || href.startsWith('javascript:')) {
+        return linkText;
+      }
+      
+      if (title) {
+        return `[${linkText}](${href} "${title}")`;
+      }
+      return `[${linkText}](${href})`;
+    }
+  });
 
   // Custom rule: preserve media placeholders
   turndown.addRule('media', {
@@ -46,14 +81,7 @@ export function createTurndownService(): TurndownService {
     }
   });
 
-  // Custom rule: clean up excessive newlines
-  turndown.addRule('cleanup', {
-    filter: () => true,
-    replacement: (content) => {
-      // Replace multiple consecutive newlines with max 2
-      return content.replace(/\n{3,}/g, '\n\n');
-    }
-  });
+  // Remove the aggressive cleanup rule to preserve more content structure
 
   return turndown;
 }

@@ -120,6 +120,16 @@ export class CrawlQueue {
         return;
       }
 
+      // Check if we got meaningful content
+      if (!article.content || article.content.trim().length < 50) {
+        this.results.push({
+          url: normalizedUrl,
+          markdown: '',
+          error: 'Page contains minimal extractable content'
+        });
+        return;
+      }
+
       const markdown = formatArticleMarkdown(article);
       
       // Cache the result
