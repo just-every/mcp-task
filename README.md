@@ -1,35 +1,70 @@
-# MCP Read Website
+# JustEvery MCP Read Website
 
-A Markdown Content Preprocessor that fetches web pages, strips noise, and converts content to clean Markdown while preserving links. Designed for RAG/LLM pipelines with minimal token footprint.
+A Markdown Content Preprocessor that fetches web pages, strips noise, and converts content to clean Markdown while preserving links. Designed for RAG/LLM pipelines with minimal token footprint. Crawl sites locally with minimal dependencies.
 
 ## MCP Server Configuration
 
 This tool can be used as an MCP (Model Context Protocol) server with Claude Desktop, Cursor, VS Code, and other compatible clients.
 
-### Quick Setup
+## Installation
 
-Add to your MCP client configuration file:
+### Claude Code
+
+```bash
+claude mcp add read-website-fast -- npx -y github:just-every/mcp-read-website-fast serve
+```
+
+### VS Code
+
+```bash
+code --add-mcp '{"name":"read-website-fast","command":"npx","args":["-y","github:just-every/mcp-read-website-fast","serve"]}'
+```
+
+### Cursor
+
+```bash
+cursor://anysphere.cursor-deeplink/mcp/install?name=read-website-fast&config=eyJyZWFkLXdlYnNpdGUtZmFzdCI6eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsImdpdGh1YjpqdXN0LWV2ZXJ5L21jcC1yZWFkLXdlYnNpdGUtZmFzdCIsInNlcnZlIl19fQ==
+```
+
+### JetBrains IDEs
+
+Settings → Tools → AI Assistant → Model Context Protocol (MCP) → Add
+
+Choose “As JSON” and paste:
+
+```json
+{"command":"npx","args":["-y","github:just-every/mcp-read-website-fast","serve"]}
+```
+
+Or, in the chat window, type /add and fill in the same JSON—both paths land the server in a single step. ￼
+
+### Raw JSON (works in any MCP client)
 
 ```json
 {
   "mcpServers": {
     "read-website-fast": {
       "command": "npx",
-      "args": [
-        "-y",
-        "github:just-every/mcp-read-website-fast",
-        "serve"
-      ]
+      "args": ["-y", "github:just-every/mcp-read-website-fast", "serve"]
     }
   }
 }
 ```
 
-### Configuration Locations
+Drop this into your client’s mcp.json (e.g. .vscode/mcp.json, ~/.cursor/mcp.json, or .mcp.json for Claude).
 
-- **Claude Desktop**: `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows)
-- **VS Code**: `.vscode/mcp.json` in your workspace
-- **Cursor**: Similar to VS Code configuration
+
+
+## Features
+
+- **Content extraction** using Mozilla Readability (same as Firefox Reader View)
+- **HTML to Markdown** conversion with Turndown + GFM support
+- **Smart caching** with SHA-256 hashed URLs
+- **Polite crawling** with robots.txt support and rate limiting
+- **Concurrent fetching** with configurable depth crawling
+- **Stream-first design** for low memory usage
+- **Link preservation** for knowledge graphs
+- **Optional chunking** for downstream processing
 
 ### Available Tools
 
@@ -44,25 +79,14 @@ Add to your MCP client configuration file:
 - `read-website-fast://status` - Get cache statistics
 - `read-website-fast://clear-cache` - Clear the cache directory
 
-## Features
+## Development Usage
 
-- **Content extraction** using Mozilla Readability (same as Firefox Reader View)
-- **HTML to Markdown** conversion with Turndown + GFM support
-- **Smart caching** with SHA-256 hashed URLs
-- **Polite crawling** with robots.txt support and rate limiting
-- **Concurrent fetching** with configurable depth crawling
-- **Stream-first design** for low memory usage
-- **Link preservation** for knowledge graphs
-- **Optional chunking** for downstream processing
-
-## Installation
+### Install
 
 ```bash
 npm install
 npm run build
 ```
-
-## Usage
 
 ### Single page fetch
 ```bash

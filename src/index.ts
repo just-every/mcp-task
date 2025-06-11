@@ -101,4 +101,12 @@ program
     }
   });
 
+program
+  .command('serve')
+  .description('Run as an MCP server')
+  .action(async () => {
+    // Import and run the serve module
+    await import('./serve.js');
+  });
+
 program.parse();
