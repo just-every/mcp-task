@@ -8,7 +8,7 @@ interface FetchOptions {
 
 export async function fetchStream(url: string, options: FetchOptions = {}): Promise<string> {
   const {
-    userAgent = 'MCP/0.1 (+https://github.com/mcp-read-website)',
+    userAgent = 'MCP/0.1 (+https://github.com/just-every/mcp-read-website-fast)',
     timeout = 30000,
     maxRedirections = 5
   } = options;

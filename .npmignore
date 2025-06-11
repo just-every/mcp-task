@@ -1,0 +1,72 @@
+# Source files (we ship compiled JS)
+src/
+*.ts
+!*.d.ts
+tsconfig.json
+tsconfig.prod.json
+CLAUDE.md
+
+# Test files
+test/
+*.test.*
+*.spec.*
+__tests__/
+coverage/
+.nyc_output/
+
+# Development files
+.github/
+.vscode/
+.idea/
+*.log
+.DS_Store
+.env*
+.cache/
+
+# Config files not needed at runtime
+.eslintrc*
+.prettierrc*
+vitest.config.*
+jest.config.*
+*.config.ts
+*.config.js
+!tsconfig.json
+
+# Documentation source
+docs/
+*.md
+!README.md
+
+# Build artifacts not needed
+*.map
+*.tsbuildinfo
+dist/**/*.map
+dist/**/*.d.ts.map
+
+# Examples
+examples/
+demo/
+
+# CI files
+.travis.yml
+.circleci/
+appveyor.yml
+
+# Editor files
+*.swp
+*.swo
+*~
+
+# OS files
+Thumbs.db
+
+# Development scripts
+scripts/
+bin/*.sh
+
+# Keep only essential files
+!dist/**/*
+!bin/**/*
+!package.json
+!README.md
+!LICENSE

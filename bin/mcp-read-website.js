@@ -26,14 +26,19 @@ async function main() {
     }
   } else {
     // Fall back to TypeScript with tsx for development
-    await import('tsx/esm');
-    
-    if (command === 'serve') {
-      const servePath = join(__dirname, '..', 'src', 'serve.ts');
-      await import(servePath);
-    } else {
-      const cliPath = join(__dirname, '..', 'src', 'index.ts');
-      await import(cliPath);
+    try {
+      await import('tsx/esm');
+      
+      if (command === 'serve') {
+        const servePath = join(__dirname, '..', 'src', 'serve.ts');
+        await import(servePath);
+      } else {
+        const cliPath = join(__dirname, '..', 'src', 'index.ts');
+        await import(cliPath);
+      }
+    } catch (error) {
+      console.error('Error: Development dependencies not installed. Please run "npm install" first.');
+      process.exit(1);
     }
   }
 }

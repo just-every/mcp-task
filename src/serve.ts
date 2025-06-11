@@ -6,8 +6,8 @@ import {
   ListToolsRequestSchema,
   ListResourcesRequestSchema,
   ReadResourceRequestSchema,
-  Tool,
-  Resource,
+  type Tool,
+  type Resource,
 } from "@modelcontextprotocol/sdk/types.js";
 
 // Lazy load heavy dependencies
