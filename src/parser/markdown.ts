@@ -100,23 +100,46 @@ export function htmlToMarkdown(html: string): string {
 }
 
 export function formatArticleMarkdown(article: { title: string; content: string; byline?: string | null }): string {
-  const turndown = createTurndownService();
-  let markdown = '';
-  
-  // Only add title if it exists and is not empty
-  if (article.title && article.title.trim()) {
-    markdown = `# ${article.title}\n\n`;
+  try {
+    const turndown = createTurndownService();
+    let markdown = '';
+    
+    // Only add title if it exists and is not empty
+    if (article.title && article.title.trim()) {
+      markdown = `# ${article.title}\n\n`;
+    }
+    
+    if (article.byline) {
+      markdown += `*By ${article.byline}*\n\n---\n\n`;
+    }
+    
+    // Try to convert content
+    try {
+      markdown += turndown.turndown(article.content);
+    } catch (conversionError) {
+      console.error('Error converting HTML to markdown:', conversionError);
+      // Fallback: extract text content if markdown conversion fails
+      const tempDiv = typeof document !== 'undefined' 
+        ? document.createElement('div') 
+        : null;
+      
+      if (tempDiv) {
+        tempDiv.innerHTML = article.content;
+        markdown += tempDiv.textContent || article.content;
+      } else {
+        // Last resort: strip HTML tags manually
+        markdown += article.content.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ');
+      }
+    }
+    
+    // Post-processing
+    return markdown
+      .replace(/\n{3,}/g, '\n\n')
+      .replace(/\s+$/gm, '')
+      .trim();
+  } catch (error) {
+    console.error('Fatal error in formatArticleMarkdown:', error);
+    // Return at least the title
+    return article.title ? `# ${article.title}\n\n[Content extraction failed]` : '[Content extraction failed]';
   }
-  
-  if (article.byline) {
-    markdown += `*By ${article.byline}*\n\n---\n\n`;
-  }
-  
-  markdown += turndown.turndown(article.content);
-  
-  // Post-processing
-  return markdown
-    .replace(/\n{3,}/g, '\n\n')
-    .replace(/\s+$/gm, '')
-    .trim();
 }

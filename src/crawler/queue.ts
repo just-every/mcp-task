@@ -107,6 +107,15 @@ export class CrawlQueue {
         timeout: this.options.timeout
       });
 
+      // Check if we got valid HTML
+      if (!html || html.trim().length === 0) {
+        this.results.push({
+          url: normalizedUrl,
+          markdown: '',
+          error: 'Empty response from server'
+        });
+        return;
+      }
 
       const dom = htmlToDom(html, normalizedUrl);
       const article = extractArticle(dom);

@@ -34,49 +34,90 @@ export function extractArticle(dom: JSDOM): Article | null {
 }
 
 function extractContentManually(dom: JSDOM): Article | null {
-  const document = dom.window.document;
-  
-  // Get title
-  const title = document.querySelector('title')?.textContent || 
-                document.querySelector('h1')?.textContent || 
-                document.querySelector('meta[property="og:title"]')?.getAttribute('content') || 
-                '';
-  
-  // Get author/byline
-  const byline = document.querySelector('meta[name="author"]')?.getAttribute('content') || 
-                 document.querySelector('[rel="author"]')?.textContent || 
-                 null;
-  
-  // Clone body and only remove script/style elements
-  const contentClone = document.body.cloneNode(true) as HTMLElement;
-  
-  // Only remove truly non-text elements
-  const selectorsToRemove = [
-    'script', 'style', 'noscript'
-  ];
-  
-  selectorsToRemove.forEach(selector => {
-    contentClone.querySelectorAll(selector).forEach(el => el.remove());
-  });
-  
-  // Use the entire body content
-  const mainContent = contentClone;
-  
-  // Preserve structure and links
-  const content = mainContent.innerHTML;
-  
-  return {
-    title: title.trim(),
-    content,
-    byline,
-    excerpt: '',
-    dir: null,
-    lang: document.documentElement.lang || null,
-    length: content.length,
-    siteName: null,
-    textContent: mainContent.textContent || '',
-    publishedTime: null
-  };
+  try {
+    const document = dom.window.document;
+    
+    // Get title - try multiple sources
+    const title = document.querySelector('title')?.textContent || 
+                  document.querySelector('h1')?.textContent || 
+                  document.querySelector('meta[property="og:title"]')?.getAttribute('content') || 
+                  document.querySelector('meta[name="title"]')?.getAttribute('content') ||
+                  'Untitled Page';
+    
+    // Get author/byline
+    const byline = document.querySelector('meta[name="author"]')?.getAttribute('content') || 
+                   document.querySelector('[rel="author"]')?.textContent || 
+                   document.querySelector('.author')?.textContent ||
+                   null;
+    
+    // Handle cases where body might not exist
+    if (!document.body) {
+      // Try to extract from documentElement instead
+      const html = document.documentElement?.innerHTML || '';
+      return {
+        title: title.trim(),
+        content: html,
+        byline,
+        excerpt: '',
+        dir: null,
+        lang: document.documentElement?.lang || null,
+        length: html.length,
+        siteName: null,
+        textContent: document.documentElement?.textContent || '',
+        publishedTime: null
+      };
+    }
+    
+    // Clone body and only remove script/style elements
+    const contentClone = document.body.cloneNode(true) as HTMLElement;
+    
+    // Only remove truly non-text elements
+    const selectorsToRemove = [
+      'script', 'style', 'noscript', 'template'
+    ];
+    
+    selectorsToRemove.forEach(selector => {
+      try {
+        contentClone.querySelectorAll(selector).forEach(el => el.remove());
+      } catch (e) {
+        // Continue if selector fails
+      }
+    });
+    
+    // Use the entire body content
+    const mainContent = contentClone;
+    
+    // Preserve structure and links
+    const content = mainContent.innerHTML || mainContent.textContent || '';
+    
+    return {
+      title: title.trim(),
+      content,
+      byline,
+      excerpt: '',
+      dir: null,
+      lang: document.documentElement?.lang || null,
+      length: content.length,
+      siteName: null,
+      textContent: mainContent.textContent || '',
+      publishedTime: null
+    };
+  } catch (error) {
+    // Last resort - try to get any text content
+    console.error('Error in manual extraction:', error);
+    return {
+      title: 'Error extracting content',
+      content: dom.window.document.body?.innerHTML || dom.window.document.documentElement?.innerHTML || '',
+      byline: null,
+      excerpt: '',
+      dir: null,
+      lang: null,
+      length: 0,
+      siteName: null,
+      textContent: dom.window.document.body?.textContent || '',
+      publishedTime: null
+    };
+  }
 }
 
 export function hasContent(html: string): boolean {

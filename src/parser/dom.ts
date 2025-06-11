@@ -1,14 +1,32 @@
 import { JSDOM } from 'jsdom';
 
 export function htmlToDom(html: string, url: string): JSDOM {
-  return new JSDOM(html, {
-    url,
-    contentType: 'text/html',
-    includeNodeLocations: false,
-    runScripts: 'outside-only',
-    resources: 'usable',
-    pretendToBeVisual: true
-  });
+  try {
+    return new JSDOM(html, {
+      url,
+      contentType: 'text/html',
+      includeNodeLocations: false,
+      runScripts: 'outside-only',
+      resources: 'usable',
+      pretendToBeVisual: true
+    });
+  } catch (error) {
+    console.error('Error parsing HTML with JSDOM, trying with minimal options:', error);
+    // Try again with minimal options
+    try {
+      return new JSDOM(html, {
+        url,
+        contentType: 'text/html'
+      });
+    } catch (fallbackError) {
+      console.error('Fallback parsing also failed:', fallbackError);
+      // Return a minimal DOM with the content
+      return new JSDOM(`<!DOCTYPE html><html><body>${html}</body></html>`, {
+        url,
+        contentType: 'text/html'
+      });
+    }
+  }
 }
 
 export function extractLinks(dom: JSDOM): string[] {
