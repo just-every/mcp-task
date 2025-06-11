@@ -65,8 +65,3 @@ scripts/
 bin/*.sh
 
 # Keep only essential files
-!dist/**/*
-!bin/**/*
-!package.json
-!README.md
-!LICENSE

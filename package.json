@@ -6,6 +6,13 @@
   "bin": {
     "mcp-read-website-fast": "bin/mcp-read-website.js"
   },
+  "files": [
+    "dist/**/*",
+    "bin/**/*",
+    "README.md",
+    "LICENSE",
+    "package.json"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.prod.json",
     "build:dev": "tsc",
