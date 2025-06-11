@@ -1,6 +1,8 @@
-# JustEvery MCP Read Website
+# MCP Read JustEvery Website
 
-A Markdown Content Preprocessor that fetches web pages, strips noise, and converts content to clean Markdown while preserving links. Designed for RAG/LLM pipelines with minimal token footprint. Crawl sites locally with minimal dependencies.
+Existing MCP web crawlers are slow and consume large quantities of tokens. This pauses the development process and provides incomplete results as LLMs need to parse whole web pages.
+
+This MCP packages fetches web pages locally, strips noise, and converts content to clean Markdown while preserving links. Designed for Claude Code, IDEs and LLM pipelines with minimal token footprint. Crawl sites locally with minimal dependencies.
 
 ## MCP Server Configuration
 
@@ -11,7 +13,7 @@ This tool can be used as an MCP (Model Context Protocol) server with Claude Desk
 ### Claude Code
 
 ```bash
-claude mcp add read-website-fast -- npx -y github:just-every/mcp-read-website-fast serve
+claude mcp add read-website-fast -s user -- npx -y github:just-every/mcp-read-website-fast serve
 ```
 
 ### VS Code
