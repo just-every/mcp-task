@@ -2,6 +2,48 @@
 
 A Markdown Content Preprocessor that fetches web pages, strips noise, and converts content to clean Markdown while preserving links. Designed for RAG/LLM pipelines with minimal token footprint.
 
+## MCP Server Configuration
+
+This tool can be used as an MCP (Model Context Protocol) server with Claude Desktop, Cursor, VS Code, and other compatible clients.
+
+### Quick Setup
+
+Add to your MCP client configuration file:
+
+```json
+{
+  "mcpServers": {
+    "fast-read-website": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "github:just-every/mcp-fast-read-website",
+        "serve"
+      ]
+    }
+  }
+}
+```
+
+### Configuration Locations
+
+- **Claude Desktop**: `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows)
+- **VS Code**: `.vscode/mcp.json` in your workspace
+- **Cursor**: Similar to VS Code configuration
+
+### Available Tools
+
+- `fast_read_website` - Fetches a webpage and converts it to clean markdown
+  - Parameters:
+    - `url` (required): The HTTP/HTTPS URL to fetch
+    - `depth` (optional): Crawl depth (0 = single page)
+    - `respectRobots` (optional): Whether to respect robots.txt
+
+### Available Resources
+
+- `fast-read-website://status` - Get cache statistics
+- `fast-read-website://clear-cache` - Clear the cache directory
+
 ## Features
 
 - **Content extraction** using Mozilla Readability (same as Firefox Reader View)
