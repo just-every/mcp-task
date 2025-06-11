@@ -7,7 +7,11 @@ import { join } from 'path';
 
 const server = new FastMCP({
   name: 'read-website-fast',
-  version: '0.1.0'
+  version: '0.1.0',
+  capabilities: {
+    tools: {},
+    resources: {}
+  }
 });
 
 // Tool: read_website_fast
@@ -95,4 +99,12 @@ server.addResource({
 });
 
 // Run the MCP server (stdio by default)
-server.start({ transportType: 'stdio' });
+server.start({ 
+  transportType: 'stdio',
+  stdio: {
+    stderr: process.stderr
+  }
+}).catch((error) => {
+  console.error('Failed to start MCP server:', error);
+  process.exit(1);
+});
