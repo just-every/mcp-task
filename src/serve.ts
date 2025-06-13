@@ -10,6 +10,11 @@ import {
     type Resource,
 } from '@modelcontextprotocol/sdk/types.js';
 
+// Ensure the process doesn't exit on stdio errors
+process.stdin.on('error', () => {});
+process.stdout.on('error', () => {});
+process.stderr.on('error', () => {});
+
 // Lazy load heavy dependencies
 let fetchMarkdownModule: any;
 let fsPromises: any;
@@ -27,6 +32,11 @@ const server = new Server(
         },
     }
 );
+
+// Add error handling for the server instance
+server.onerror = error => {
+    console.error('[MCP Server Error]', error);
+};
 
 // Tool definition
 const READ_WEBSITE_TOOL: Tool = {
@@ -251,7 +261,14 @@ server.setRequestHandler(ReadResourceRequestSchema, async request => {
 
 // Start the server
 async function runServer() {
+    // Create transport with explicit error handling
     const transport = new StdioServerTransport();
+
+    // Add transport error handling
+    transport.onerror = error => {
+        console.error('[Transport Error]', error);
+        // Don't exit on transport errors
+    };
 
     // Handle graceful shutdown
     process.on('SIGINT', async () => {
@@ -266,15 +283,32 @@ async function runServer() {
         process.exit(0);
     });
 
-    // Handle unexpected errors
+    // Handle unexpected errors - be more cautious about exiting
     process.on('uncaughtException', error => {
         console.error('Uncaught exception:', error);
+        // Try to recover instead of immediately exiting
+        if (error && error.message && error.message.includes('EPIPE')) {
+            console.error('Pipe error detected, keeping server alive');
+            return;
+        }
+        // Only exit for truly fatal errors
         process.exit(1);
     });
 
     process.on('unhandledRejection', (reason, promise) => {
         console.error('Unhandled rejection at:', promise, 'reason:', reason);
-        process.exit(1);
+        // Log but don't exit for promise rejections
+    });
+
+    // Handle stdin closure
+    process.stdin.on('end', () => {
+        console.error('Stdin closed, shutting down...');
+        process.exit(0);
+    });
+
+    process.stdin.on('error', error => {
+        console.error('Stdin error:', error);
+        // Don't exit on stdin errors
     });
 
     try {

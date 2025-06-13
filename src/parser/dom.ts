@@ -10,10 +10,9 @@ export function htmlToDom(html: string, url: string): JSDOM {
             runScripts: undefined, // Don't run scripts
             resources: undefined, // Don't load external resources
             pretendToBeVisual: true,
-            virtualConsole: new VirtualConsole().sendTo(
-                console,
-                { omitJSDOMErrors: true }
-            ),
+            virtualConsole: new VirtualConsole().sendTo(console, {
+                omitJSDOMErrors: true,
+            }),
         });
     } catch {
         // Try again with minimal options
@@ -21,10 +20,9 @@ export function htmlToDom(html: string, url: string): JSDOM {
             return new JSDOM(html, {
                 url,
                 contentType: 'text/html',
-                virtualConsole: new VirtualConsole().sendTo(
-                    console,
-                    { omitJSDOMErrors: true }
-                ),
+                virtualConsole: new VirtualConsole().sendTo(console, {
+                    omitJSDOMErrors: true,
+                }),
             });
         } catch {
             // Return a minimal DOM with the content
@@ -33,10 +31,9 @@ export function htmlToDom(html: string, url: string): JSDOM {
                 {
                     url,
                     contentType: 'text/html',
-                    virtualConsole: new VirtualConsole().sendTo(
-                        console,
-                        { omitJSDOMErrors: true }
-                    ),
+                    virtualConsole: new VirtualConsole().sendTo(console, {
+                        omitJSDOMErrors: true,
+                    }),
                 }
             );
         }
