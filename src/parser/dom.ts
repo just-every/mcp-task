@@ -1,4 +1,4 @@
-import { JSDOM } from 'jsdom';
+import { JSDOM, VirtualConsole } from 'jsdom';
 
 export function htmlToDom(html: string, url: string): JSDOM {
     try {
@@ -10,7 +10,7 @@ export function htmlToDom(html: string, url: string): JSDOM {
             runScripts: undefined, // Don't run scripts
             resources: undefined, // Don't load external resources
             pretendToBeVisual: true,
-            virtualConsole: new (JSDOM as any).VirtualConsole().sendTo(
+            virtualConsole: new VirtualConsole().sendTo(
                 console,
                 { omitJSDOMErrors: true }
             ),
@@ -21,7 +21,7 @@ export function htmlToDom(html: string, url: string): JSDOM {
             return new JSDOM(html, {
                 url,
                 contentType: 'text/html',
-                virtualConsole: new (JSDOM as any).VirtualConsole().sendTo(
+                virtualConsole: new VirtualConsole().sendTo(
                     console,
                     { omitJSDOMErrors: true }
                 ),
@@ -33,7 +33,7 @@ export function htmlToDom(html: string, url: string): JSDOM {
                 {
                     url,
                     contentType: 'text/html',
-                    virtualConsole: new (JSDOM as any).VirtualConsole().sendTo(
+                    virtualConsole: new VirtualConsole().sendTo(
                         console,
                         { omitJSDOMErrors: true }
                     ),
