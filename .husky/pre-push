@@ -1,0 +1,30 @@
+#!/bin/sh
+. "$(dirname "$0")/_/husky.sh"
+
+echo "Running pre-push checks..."
+
+# Run tests
+npm test || {
+  echo "❌ Tests failed. Push aborted."
+  exit 1
+}
+
+# Run lint
+npm run lint || {
+  echo "❌ Linting failed. Push aborted."
+  exit 1
+}
+
+# Run build
+npm run build || {
+  echo "❌ Build failed. Push aborted."
+  exit 1
+}
+
+# Run deployment test
+npm run test:deploy || {
+  echo "❌ Deployment test failed. Push aborted."
+  exit 1
+}
+
+echo "✅ All pre-push checks passed!"
