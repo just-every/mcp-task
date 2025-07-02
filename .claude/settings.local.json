@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run build:*)",
+      "Bash(npm run serve:*)",
+      "Bash(find:*)",
+      "Bash(npm view:*)",
+      "Bash(npm install:*)",
+      "Bash(ls:*)",
+      "Bash(./bin/mcp-read-website.js serve:*)",
+      "Bash(rm:*)",
+      "Bash(npm link:*)",
+      "Bash(npm ls:*)",
+      "Bash(mcp-read-website-fast serve:*)",
+      "mcp__read-website-fast__read_website_fast"
+    ],
+    "deny": []
+  }
+}
