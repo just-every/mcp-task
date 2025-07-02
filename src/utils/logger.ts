@@ -21,15 +21,16 @@ export class Logger {
         const levelName = LogLevel[level];
         const prefix = `[${timestamp}] [${levelName}] [${this.name}]`;
 
+        // Always use stderr for MCP servers to avoid stdout conflicts
         switch (level) {
             case LogLevel.ERROR:
                 console.error(prefix, message, ...args);
                 break;
             case LogLevel.WARN:
-                console.warn(prefix, message, ...args);
+                console.error(prefix, message, ...args);
                 break;
             default:
-                console.log(prefix, message, ...args);
+                console.error(prefix, message, ...args);
         }
     }
 

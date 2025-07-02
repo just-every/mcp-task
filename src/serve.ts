@@ -1,4 +1,10 @@
 #!/usr/bin/env node
+
+// Immediate startup logging to stderr for CI debugging
+console.error('[serve.ts] Process started, PID:', process.pid);
+console.error('[serve.ts] Node version:', process.version);
+console.error('[serve.ts] Current directory:', process.cwd());
+
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import {
@@ -9,6 +15,14 @@ import {
     type Tool,
     type Resource,
 } from '@modelcontextprotocol/sdk/types.js';
+import { logger, LogLevel } from './utils/logger.js';
+
+// Enable debug logging for MCP server
+logger.setLevel(LogLevel.DEBUG);
+logger.info('MCP Server starting up...');
+logger.debug('Node version:', process.version);
+logger.debug('Working directory:', process.cwd());
+logger.debug('Environment:', { LOG_LEVEL: process.env.LOG_LEVEL });
 
 // Ensure the process doesn't exit on stdio errors
 process.stdin.on('error', () => {});
@@ -20,6 +34,7 @@ let fetchMarkdownModule: any;
 let fsPromises: any;
 let pathModule: any;
 
+logger.debug('Creating MCP server instance...');
 const server = new Server(
     {
         name: 'read-website-fast',
@@ -32,17 +47,18 @@ const server = new Server(
         },
     }
 );
+logger.info('MCP server instance created successfully');
 
 // Add error handling for the server instance
 server.onerror = error => {
-    console.error('[MCP Server Error]', error);
+    logger.error('MCP Server Error:', error);
 };
 
 // Tool definition
 const READ_WEBSITE_TOOL: Tool = {
-    name: 'read_website_fast',
+    name: 'read_website',
     description:
-        'Quickly reads webpages and converts to markdown for fast, token efficient web scraping',
+        'Fast, token-efficient web content extraction - ideal for reading documentation, analyzing content, and gathering information from websites. Converts to clean Markdown while preserving links and structure.',
     inputSchema: {
         type: 'object',
         properties: {
@@ -63,6 +79,13 @@ const READ_WEBSITE_TOOL: Tool = {
         },
         required: ['url'],
     },
+    annotations: {
+        title: 'Read Website',
+        readOnlyHint: true,      // Only reads content
+        destructiveHint: false,   
+        idempotentHint: true,    // Same URL returns same content (with cache)
+        openWorldHint: true,     // Interacts with external websites
+    },
 };
 
 // Resources definitions
@@ -82,20 +105,32 @@ const RESOURCES: Resource[] = [
 ];
 
 // Handle tool listing
-server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: [READ_WEBSITE_TOOL],
-}));
+server.setRequestHandler(ListToolsRequestSchema, async () => {
+    logger.debug('Received ListTools request');
+    const response = {
+        tools: [READ_WEBSITE_TOOL],
+    };
+    logger.debug('Returning tools:', response.tools.map(t => t.name));
+    return response;
+});
 
 // Handle tool execution
 server.setRequestHandler(CallToolRequestSchema, async request => {
-    if (request.params.name !== 'read_website_fast') {
-        throw new Error(`Unknown tool: ${request.params.name}`);
+    logger.info('Received CallTool request:', request.params.name);
+    logger.debug('Request params:', JSON.stringify(request.params, null, 2));
+    
+    if (request.params.name !== 'read_website') {
+        const error = `Unknown tool: ${request.params.name}`;
+        logger.error(error);
+        throw new Error(error);
     }
 
     try {
         // Lazy load the module on first use
         if (!fetchMarkdownModule) {
+            logger.debug('Lazy loading fetchMarkdown module...');
             fetchMarkdownModule = await import('./internal/fetchMarkdown.js');
+            logger.info('fetchMarkdown module loaded successfully');
         }
 
         const args = request.params.arguments as any;
@@ -105,10 +140,19 @@ server.setRequestHandler(CallToolRequestSchema, async request => {
             throw new Error('URL parameter is required and must be a string');
         }
 
+        logger.info(`Processing read request for URL: ${args.url}`);
+        logger.debug('Read parameters:', {
+            url: args.url,
+            depth: args.depth,
+            respectRobots: args.respectRobots,
+        });
+        
+        logger.debug('Calling fetchMarkdown...');
         const result = await fetchMarkdownModule.fetchMarkdown(args.url, {
             depth: args.depth ?? 0,
             respectRobots: args.respectRobots ?? true,
         });
+        logger.info('Content fetched successfully');
 
         // If there's an error but we still have some content, return it with a note
         if (result.error && result.markdown) {
@@ -130,9 +174,14 @@ server.setRequestHandler(CallToolRequestSchema, async request => {
         return {
             content: [{ type: 'text', text: result.markdown }],
         };
-    } catch (error) {
-        // Log the error for debugging
-        console.error('Tool execution error:', error);
+    } catch (error: any) {
+        logger.error('Error fetching content:', error.message);
+        logger.debug('Error stack:', error.stack);
+        logger.debug('Error details:', {
+            name: error.name,
+            code: error.code,
+            ...error,
+        });
 
         // Re-throw with more context
         throw new Error(
@@ -142,12 +191,16 @@ server.setRequestHandler(CallToolRequestSchema, async request => {
 });
 
 // Handle resource listing
-server.setRequestHandler(ListResourcesRequestSchema, async () => ({
-    resources: RESOURCES,
-}));
+server.setRequestHandler(ListResourcesRequestSchema, async () => {
+    logger.debug('Received ListResources request');
+    return {
+        resources: RESOURCES,
+    };
+});
 
 // Handle resource reading
 server.setRequestHandler(ReadResourceRequestSchema, async request => {
+    logger.debug('Received ReadResource request:', request.params);
     const uri = request.params.uri;
 
     // Lazy load fs and path modules
@@ -261,34 +314,48 @@ server.setRequestHandler(ReadResourceRequestSchema, async request => {
 
 // Start the server
 async function runServer() {
-    // Create transport with explicit error handling
-    const transport = new StdioServerTransport();
+    try {
+        logger.info('Starting MCP server...');
+        logger.debug('Creating StdioServerTransport...');
+        
+        const transport = new StdioServerTransport();
+        logger.debug('Transport created, connecting to server...');
 
     // Add transport error handling
     transport.onerror = error => {
-        console.error('[Transport Error]', error);
-        // Don't exit on transport errors
+        logger.error('Transport Error:', error);
+        // Don't exit on transport errors unless it's a connection close
+        if (error?.message?.includes('Connection closed')) {
+            logger.info('Connection closed by client');
+            process.exit(0);
+        }
     };
 
     // Handle graceful shutdown
-    process.on('SIGINT', async () => {
-        console.error('Received SIGINT, shutting down gracefully...');
-        await server.close();
-        process.exit(0);
-    });
+    const cleanup = async (signal: string) => {
+        logger.info(`Received ${signal}, shutting down gracefully...`);
+        try {
+            await server.close();
+            logger.info('Server closed successfully');
+            process.exit(0);
+        } catch (error) {
+            logger.error('Error during cleanup:', error);
+            process.exit(1);
+        }
+    };
+    
+    process.on('SIGINT', () => cleanup('SIGINT'));
+    process.on('SIGTERM', () => cleanup('SIGTERM'));
 
-    process.on('SIGTERM', async () => {
-        console.error('Received SIGTERM, shutting down gracefully...');
-        await server.close();
-        process.exit(0);
-    });
 
     // Handle unexpected errors - be more cautious about exiting
     process.on('uncaughtException', error => {
-        console.error('Uncaught exception:', error);
+        logger.error('Uncaught exception:', error.message);
+        logger.error('Stack trace:', error.stack);
+        logger.debug('Full error object:', error);
         // Try to recover instead of immediately exiting
         if (error && error.message && error.message.includes('EPIPE')) {
-            console.error('Pipe error detected, keeping server alive');
+            logger.warn('Pipe error detected, keeping server alive');
             return;
         }
         // Only exit for truly fatal errors
@@ -296,34 +363,62 @@ async function runServer() {
     });
 
     process.on('unhandledRejection', (reason, promise) => {
-        console.error('Unhandled rejection at:', promise, 'reason:', reason);
+        logger.error('Unhandled Rejection at:', promise);
+        logger.error('Rejection reason:', reason);
+        logger.debug('Full rejection details:', { reason, promise });
         // Log but don't exit for promise rejections
     });
 
+    // Log process events
+    process.on('exit', code => {
+        logger.info(`Process exiting with code: ${code}`);
+    });
+    
+    process.on('warning', warning => {
+        logger.warn('Process warning:', warning.message);
+        logger.debug('Warning details:', warning);
+    });
+    
     // Handle stdin closure
     process.stdin.on('end', () => {
-        console.error('Stdin closed, shutting down...');
-        process.exit(0);
+        logger.info('Stdin closed, shutting down...');
+        // Give a small delay to ensure any final messages are sent
+        setTimeout(() => process.exit(0), 100);
     });
 
     process.stdin.on('error', error => {
-        console.error('Stdin error:', error);
+        logger.warn('Stdin error:', error);
         // Don't exit on stdin errors
     });
 
-    try {
         await server.connect(transport);
-        console.error('read-website-fast MCP server running');
+        logger.info('MCP server connected and running successfully!');
+        logger.info('Ready to receive requests');
+        logger.debug('Server details:', {
+            name: 'read-website-fast',
+            version: '0.1.0',
+            pid: process.pid,
+        });
+        
+        // Log heartbeat every 30 seconds to show server is alive
+        setInterval(() => {
+            logger.debug('Server heartbeat - still running...');
+        }, 30000);
 
         // Keep the process alive
         process.stdin.resume();
-    } catch (error) {
-        console.error('Failed to start server:', error);
-        process.exit(1);
+    } catch (error: any) {
+        logger.error('Failed to start server:', error.message);
+        logger.debug('Startup error details:', error);
+        throw error;
     }
 }
 
+// Start the server
+logger.info('Initializing MCP server...');
 runServer().catch(error => {
-    console.error('Server initialization error:', error);
+    logger.error('Fatal server error:', error.message);
+    logger.error('Stack trace:', error.stack);
+    logger.debug('Full error:', error);
     process.exit(1);
 });

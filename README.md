@@ -86,7 +86,7 @@ Drop this into your client’s mcp.json (e.g. .vscode/mcp.json, ~/.cursor/mcp.js
 
 ### Available Tools
 
-- `read_website_fast` - Fetches a webpage and converts it to clean markdown
+- `read_website` - Fetches a webpage and converts it to clean markdown
   - Parameters:
     - `url` (required): The HTTP/HTTPS URL to fetch
     - `depth` (optional): Crawl depth (0 = single page)
@@ -144,6 +144,22 @@ npm run dev fetch https://example.com --output both
 npm run dev clear-cache
 ```
 
+## Auto-Restart Feature
+
+The MCP server includes automatic restart capability by default for improved reliability:
+
+- Automatically restarts the server if it crashes
+- Handles unhandled exceptions and promise rejections
+- Implements exponential backoff (max 10 attempts in 1 minute)
+- Logs all restart attempts for monitoring
+- Gracefully handles shutdown signals (SIGINT, SIGTERM)
+
+For development/debugging without auto-restart:
+```bash
+# Run directly without restart wrapper
+npm run serve:dev
+```
+
 ## Architecture
 
 ```
@@ -153,7 +169,9 @@ mcp/
 │   ├── parser/         # DOM parsing, Readability, Turndown conversion
 │   ├── cache/          # Disk-based caching with SHA-256 keys
 │   ├── utils/          # Logger, chunker utilities
-│   └── index.ts        # CLI entry point
+│   ├── index.ts        # CLI entry point
+│   ├── serve.ts        # MCP server entry point
+│   └── serve-restart.ts # Auto-restart wrapper
 ```
 
 ## Development
