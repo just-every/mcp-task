@@ -11,6 +11,8 @@ Existing MCP web crawlers are slow and consume large quantities of tokens. This 
 
 This MCP package fetches web pages locally, strips noise, and converts content to clean Markdown while preserving links. Designed for Claude Code, IDEs and LLM pipelines with minimal token footprint. Crawl sites locally with minimal dependencies.
 
+**Note:** This package now uses [@just-every/crawl](https://www.npmjs.com/package/@just-every/crawl) for its core crawling and markdown conversion functionality.
+
 ## Features
 
 - **Fast startup** using official MCP SDK with lazy loading for optimal performance
