@@ -1,8 +1,7 @@
 #!/usr/bin/env node
 
 import { Command } from 'commander';
-import { CrawlQueue } from './crawler/queue.js';
-import { CrawlOptions } from './types.js';
+import { fetch, CrawlOptions } from '@just-every/crawl';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -51,11 +50,8 @@ program
                 timeout: parseInt(options.timeout, 10),
             };
 
-            const queue = new CrawlQueue(crawlOptions);
-            await queue.init();
-
             console.error(`Fetching ${url}...`);
-            const results = await queue.crawl(url);
+            const results = await fetch(url, crawlOptions);
 
             if (options.output === 'json') {
                 console.log(JSON.stringify(results, null, 2));

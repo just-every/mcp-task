@@ -1,6 +1,6 @@
 {
   "name": "@just-every/mcp-read-website-fast",
-  "version": "0.1.11",
+  "version": "0.2.0",
   "description": "Markdown Content Preprocessor - Fetch web pages, extract content, convert to clean Markdown",
   "main": "dist/index.js",
   "bin": {
@@ -50,15 +50,9 @@
   "homepage": "https://github.com/just-every/mcp-read-website-fast#readme",
   "license": "MIT",
   "dependencies": {
+    "@just-every/crawl": "file:../../crawl",
     "@modelcontextprotocol/sdk": "^1.12.3",
-    "@mozilla/readability": "^0.6.0",
-    "commander": "^14.0.0",
-    "jsdom": "^26.1.0",
-    "p-limit": "^6.2.0",
-    "robots-parser": "^3.0.1",
-    "turndown": "^7.1.3",
-    "turndown-plugin-gfm": "^1.0.2",
-    "undici": "^7.10.0"
+    "commander": "^14.0.0"
   },
   "devDependencies": {
     "@types/jsdom": "^21.1.6",

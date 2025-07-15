@@ -1,5 +1,4 @@
-import { CrawlQueue } from '../crawler/queue.js';
-import { CrawlOptions } from '../types.js';
+import { fetch, CrawlOptions } from '@just-every/crawl';
 
 export interface FetchMarkdownOptions {
     depth?: number;
@@ -33,10 +32,7 @@ export async function fetchMarkdown(
             timeout: options.timeout ?? 30000,
         };
 
-        const queue = new CrawlQueue(crawlOptions);
-        await queue.init();
-
-        const results = await queue.crawl(url);
+        const results = await fetch(url, crawlOptions);
 
         // Return the first result (main page)
         const mainResult = results[0];
