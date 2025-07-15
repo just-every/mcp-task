@@ -118,6 +118,7 @@ describe('Deployment Tests', () => {
 
   it('should have all required dependencies', async () => {
     const pkg = await import('../package.json');
+    // Dependencies after refactoring to use @just-every/crawl
     const requiredDeps = [
       '@modelcontextprotocol/sdk',
       '@just-every/crawl',
