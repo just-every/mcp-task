@@ -120,11 +120,8 @@ describe('Deployment Tests', () => {
     const pkg = await import('../package.json');
     const requiredDeps = [
       '@modelcontextprotocol/sdk',
-      '@mozilla/readability',
-      'jsdom',
-      'turndown',
-      'commander',
-      'undici'
+      '@just-every/crawl',
+      'commander'
     ];
 
     requiredDeps.forEach(dep => {
