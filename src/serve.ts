@@ -60,15 +60,12 @@ const READ_WEBSITE_TOOL: Tool = {
                 type: 'string',
                 description: 'HTTP/HTTPS URL to fetch and convert to markdown',
             },
-            depth: {
+            pages: {
                 type: 'number',
-                description: 'Crawl depth (0 = single page)',
-                default: 0,
-            },
-            respectRobots: {
-                type: 'boolean',
-                description: 'Whether to respect robots.txt',
-                default: true,
+                description: 'Maximum number of pages to crawl (default: 1)',
+                default: 1,
+                minimum: 1,
+                maximum: 100,
             },
         },
         required: ['url'],
@@ -140,14 +137,20 @@ server.setRequestHandler(CallToolRequestSchema, async request => {
         logger.info(`Processing read request for URL: ${args.url}`);
         logger.debug('Read parameters:', {
             url: args.url,
-            depth: args.depth,
-            respectRobots: args.respectRobots,
+            pages: args.pages,
         });
 
         logger.debug('Calling fetchMarkdown...');
+        
+        // Convert pages to depth (pages - 1 = depth)
+        // pages: 1 = depth: 0 (single page)
+        // pages: 2+ = depth: 1 (crawl one level to get multiple pages)
+        const depth = args.pages > 1 ? 1 : 0;
+        
         const result = await fetchMarkdownModule.fetchMarkdown(args.url, {
-            depth: args.depth ?? 0,
-            respectRobots: args.respectRobots ?? true,
+            depth: depth,
+            respectRobots: false,  // Default to not respecting robots.txt
+            maxPages: args.pages ?? 1,
         });
         logger.info('Content fetched successfully');
 

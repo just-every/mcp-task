@@ -21,7 +21,7 @@ A fast, token-efficient web content extractor that converts web pages to clean M
 ### Development
 ```bash
 npm run dev fetch <URL>              # Fetch single page in dev mode
-npm run dev fetch <URL> --depth 2    # Crawl with depth
+npm run dev fetch <URL> --pages 3    # Crawl up to 3 pages
 npm run dev clear-cache              # Clear the cache
 npm run serve:dev                    # Run MCP server in dev mode
 ```

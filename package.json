@@ -50,7 +50,7 @@
   "homepage": "https://github.com/just-every/mcp-read-website-fast#readme",
   "license": "MIT",
   "dependencies": {
-    "@just-every/crawl": "^1.0.4",
+    "@just-every/crawl": "^1.0.6",
     "@modelcontextprotocol/sdk": "^1.12.3",
     "commander": "^14.0.0"
   },

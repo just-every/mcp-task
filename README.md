@@ -91,8 +91,7 @@ Drop this into your client’s mcp.json (e.g. .vscode/mcp.json, ~/.cursor/mcp.js
 - `read_website` - Fetches a webpage and converts it to clean markdown
   - Parameters:
     - `url` (required): The HTTP/HTTPS URL to fetch
-    - `depth` (optional): Crawl depth (0 = single page)
-    - `respectRobots` (optional): Whether to respect robots.txt
+    - `pages` (optional): Maximum number of pages to crawl (default: 1, max: 100)
 
 ### Available Resources
 
@@ -132,7 +131,7 @@ npm run dev fetch https://example.com --output both
 
 ### CLI Options
 
-- `-d, --depth <number>` - Crawl depth (0 = single page, default: 0)
+- `-p, --pages <number>` - Maximum number of pages to crawl (default: 1)
 - `-c, --concurrency <number>` - Max concurrent requests (default: 3)
 - `--no-robots` - Ignore robots.txt
 - `--all-origins` - Allow cross-origin crawling

@@ -2,6 +2,7 @@
 
 import { Command } from 'commander';
 import { fetch, CrawlOptions } from '@just-every/crawl';
+import { fetchMarkdown } from './internal/fetchMarkdown.js';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -26,7 +27,7 @@ program
 program
     .command('fetch <url>')
     .description('Fetch a URL and convert to Markdown')
-    .option('-d, --depth <number>', 'Crawl depth (0 = single page)', '0')
+    .option('-p, --pages <number>', 'Maximum number of pages to crawl', '1')
     .option('-c, --concurrency <number>', 'Max concurrent requests', '3')
     .option('--no-robots', 'Ignore robots.txt')
     .option('--all-origins', 'Allow cross-origin crawling')
@@ -40,8 +41,11 @@ program
     )
     .action(async (url: string, options) => {
         try {
+            const pages = parseInt(options.pages, 10);
+            const depth = pages > 1 ? 1 : 0; // If more than 1 page requested, crawl 1 level deep
+            
             const crawlOptions: CrawlOptions = {
-                depth: parseInt(options.depth, 10),
+                depth: depth,
                 maxConcurrency: parseInt(options.concurrency, 10),
                 respectRobots: options.robots,
                 sameOriginOnly: !options.allOrigins,
@@ -51,31 +55,27 @@ program
             };
 
             console.error(`Fetching ${url}...`);
-            const results = await fetch(url, crawlOptions);
-
+            
             if (options.output === 'json') {
+                const results = await fetch(url, crawlOptions);
                 console.log(JSON.stringify(results, null, 2));
             } else if (options.output === 'markdown') {
-                results.forEach(result => {
-                    // Always output markdown if we have it, even with errors
-                    if (result.markdown) {
-                        console.log(result.markdown);
-                        if (results.length > 1) {
-                            console.log('\n---\n'); // Separator between multiple pages
-                        }
-                    }
-                    // Show error as warning if we also have content
-                    if (result.error && result.markdown) {
-                        console.error(
-                            `Warning for ${result.url}: ${result.error}`
-                        );
-                    } else if (result.error && !result.markdown) {
-                        console.error(
-                            `Error for ${result.url}: ${result.error}`
-                        );
-                    }
+                const result = await fetchMarkdown(url, {
+                    ...crawlOptions,
+                    maxPages: pages,
                 });
+                
+                // Output the combined markdown
+                if (result.markdown) {
+                    console.log(result.markdown);
+                }
+                
+                // Show error if any
+                if (result.error) {
+                    console.error(`Error: ${result.error}`);
+                }
             } else if (options.output === 'both') {
+                const results = await fetch(url, crawlOptions);
                 results.forEach(result => {
                     console.log(`\n## URL: ${result.url}\n`);
                     if (result.markdown) {
@@ -87,12 +87,6 @@ program
                         );
                     }
                 });
-            }
-
-            // Exit with error only if we have errors without content
-            const hasFatalErrors = results.some(r => r.error && !r.markdown);
-            if (hasFatalErrors) {
-                process.exit(1);
             }
         } catch (error) {
             console.error(
