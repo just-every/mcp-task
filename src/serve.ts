@@ -81,10 +81,10 @@ const READ_WEBSITE_TOOL: Tool = {
     },
     annotations: {
         title: 'Read Website',
-        readOnlyHint: true,      // Only reads content
-        destructiveHint: false,   
-        idempotentHint: true,    // Same URL returns same content (with cache)
-        openWorldHint: true,     // Interacts with external websites
+        readOnlyHint: true, // Only reads content
+        destructiveHint: false,
+        idempotentHint: true, // Same URL returns same content (with cache)
+        openWorldHint: true, // Interacts with external websites
     },
 };
 
@@ -110,7 +110,10 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
     const response = {
         tools: [READ_WEBSITE_TOOL],
     };
-    logger.debug('Returning tools:', response.tools.map(t => t.name));
+    logger.debug(
+        'Returning tools:',
+        response.tools.map(t => t.name)
+    );
     return response;
 });
 
@@ -118,7 +121,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 server.setRequestHandler(CallToolRequestSchema, async request => {
     logger.info('Received CallTool request:', request.params.name);
     logger.debug('Request params:', JSON.stringify(request.params, null, 2));
-    
+
     if (request.params.name !== 'read_website') {
         const error = `Unknown tool: ${request.params.name}`;
         logger.error(error);
@@ -146,7 +149,7 @@ server.setRequestHandler(CallToolRequestSchema, async request => {
             depth: args.depth,
             respectRobots: args.respectRobots,
         });
-        
+
         logger.debug('Calling fetchMarkdown...');
         const result = await fetchMarkdownModule.fetchMarkdown(args.url, {
             depth: args.depth ?? 0,
@@ -317,79 +320,78 @@ async function runServer() {
     try {
         logger.info('Starting MCP server...');
         logger.debug('Creating StdioServerTransport...');
-        
+
         const transport = new StdioServerTransport();
         logger.debug('Transport created, connecting to server...');
 
-    // Add transport error handling
-    transport.onerror = error => {
-        logger.error('Transport Error:', error);
-        // Don't exit on transport errors unless it's a connection close
-        if (error?.message?.includes('Connection closed')) {
-            logger.info('Connection closed by client');
-            process.exit(0);
-        }
-    };
+        // Add transport error handling
+        transport.onerror = error => {
+            logger.error('Transport Error:', error);
+            // Don't exit on transport errors unless it's a connection close
+            if (error?.message?.includes('Connection closed')) {
+                logger.info('Connection closed by client');
+                process.exit(0);
+            }
+        };
 
-    // Handle graceful shutdown
-    const cleanup = async (signal: string) => {
-        logger.info(`Received ${signal}, shutting down gracefully...`);
-        try {
-            await server.close();
-            logger.info('Server closed successfully');
-            process.exit(0);
-        } catch (error) {
-            logger.error('Error during cleanup:', error);
+        // Handle graceful shutdown
+        const cleanup = async (signal: string) => {
+            logger.info(`Received ${signal}, shutting down gracefully...`);
+            try {
+                await server.close();
+                logger.info('Server closed successfully');
+                process.exit(0);
+            } catch (error) {
+                logger.error('Error during cleanup:', error);
+                process.exit(1);
+            }
+        };
+
+        process.on('SIGINT', () => cleanup('SIGINT'));
+        process.on('SIGTERM', () => cleanup('SIGTERM'));
+
+        // Handle unexpected errors - be more cautious about exiting
+        process.on('uncaughtException', error => {
+            logger.error('Uncaught exception:', error.message);
+            logger.error('Stack trace:', error.stack);
+            logger.debug('Full error object:', error);
+            // Try to recover instead of immediately exiting
+            if (error && error.message && error.message.includes('EPIPE')) {
+                logger.warn('Pipe error detected, keeping server alive');
+                return;
+            }
+            // Only exit for truly fatal errors
             process.exit(1);
-        }
-    };
-    
-    process.on('SIGINT', () => cleanup('SIGINT'));
-    process.on('SIGTERM', () => cleanup('SIGTERM'));
+        });
 
+        process.on('unhandledRejection', (reason, promise) => {
+            logger.error('Unhandled Rejection at:', promise);
+            logger.error('Rejection reason:', reason);
+            logger.debug('Full rejection details:', { reason, promise });
+            // Log but don't exit for promise rejections
+        });
 
-    // Handle unexpected errors - be more cautious about exiting
-    process.on('uncaughtException', error => {
-        logger.error('Uncaught exception:', error.message);
-        logger.error('Stack trace:', error.stack);
-        logger.debug('Full error object:', error);
-        // Try to recover instead of immediately exiting
-        if (error && error.message && error.message.includes('EPIPE')) {
-            logger.warn('Pipe error detected, keeping server alive');
-            return;
-        }
-        // Only exit for truly fatal errors
-        process.exit(1);
-    });
+        // Log process events
+        process.on('exit', code => {
+            logger.info(`Process exiting with code: ${code}`);
+        });
 
-    process.on('unhandledRejection', (reason, promise) => {
-        logger.error('Unhandled Rejection at:', promise);
-        logger.error('Rejection reason:', reason);
-        logger.debug('Full rejection details:', { reason, promise });
-        // Log but don't exit for promise rejections
-    });
+        process.on('warning', warning => {
+            logger.warn('Process warning:', warning.message);
+            logger.debug('Warning details:', warning);
+        });
 
-    // Log process events
-    process.on('exit', code => {
-        logger.info(`Process exiting with code: ${code}`);
-    });
-    
-    process.on('warning', warning => {
-        logger.warn('Process warning:', warning.message);
-        logger.debug('Warning details:', warning);
-    });
-    
-    // Handle stdin closure
-    process.stdin.on('end', () => {
-        logger.info('Stdin closed, shutting down...');
-        // Give a small delay to ensure any final messages are sent
-        setTimeout(() => process.exit(0), 100);
-    });
+        // Handle stdin closure
+        process.stdin.on('end', () => {
+            logger.info('Stdin closed, shutting down...');
+            // Give a small delay to ensure any final messages are sent
+            setTimeout(() => process.exit(0), 100);
+        });
 
-    process.stdin.on('error', error => {
-        logger.warn('Stdin error:', error);
-        // Don't exit on stdin errors
-    });
+        process.stdin.on('error', error => {
+            logger.warn('Stdin error:', error);
+            // Don't exit on stdin errors
+        });
 
         await server.connect(transport);
         logger.info('MCP server connected and running successfully!');
@@ -399,7 +401,7 @@ async function runServer() {
             version: '0.1.0',
             pid: process.pid,
         });
-        
+
         // Log heartbeat every 30 seconds to show server is alive
         setInterval(() => {
             logger.debug('Server heartbeat - still running...');
