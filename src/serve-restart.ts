@@ -74,7 +74,7 @@ const startServer = () => {
     let shuttingDown = false;
 
     // Forward stderr but don't interfere with MCP protocol
-    child.stderr?.on('data', (data) => {
+    child.stderr?.on('data', data => {
         process.stderr.write(data);
     });
     let restartTimer: NodeJS.Timeout | null = null;

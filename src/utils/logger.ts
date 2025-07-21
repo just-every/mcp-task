@@ -8,14 +8,22 @@ export enum LogLevel {
 export class Logger {
     private level: LogLevel;
     private name: string;
+    private quiet: boolean;
 
     constructor(name: string, level: LogLevel = LogLevel.INFO) {
         this.name = name;
         this.level = level;
+        // In MCP mode, only output errors unless explicitly in debug mode
+        this.quiet =
+            process.env.MCP_QUIET === 'true' ||
+            (!process.env.MCP_DEBUG && this.name === 'MCP');
     }
 
     private log(level: LogLevel, message: string, ...args: any[]): void {
         if (level > this.level) return;
+
+        // In quiet mode, only output errors
+        if (this.quiet && level !== LogLevel.ERROR) return;
 
         const timestamp = new Date().toISOString();
         const levelName = LogLevel[level];

@@ -26,7 +26,8 @@ describe('Deployment Tests', () => {
 
   it('should start MCP server without errors', async () => {
     const serverProcess = spawn('node', [join(rootDir, 'dist/serve.js')], {
-      stdio: ['pipe', 'pipe', 'pipe']
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env: { ...process.env, MCP_DEBUG: 'true' }
     });
 
     return new Promise<void>((resolve, reject) => {
@@ -60,7 +61,8 @@ describe('Deployment Tests', () => {
   it('should default to serve command when no args provided', async () => {
     const binPath = join(rootDir, 'bin/mcp-read-website.js');
     const binProcess = spawn('node', [binPath], {
-      stdio: ['pipe', 'pipe', 'pipe']
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env: { ...process.env, MCP_DEBUG: 'true' }
     });
 
     return new Promise<void>((resolve, reject) => {

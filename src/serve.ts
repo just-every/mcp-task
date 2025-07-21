@@ -1,10 +1,5 @@
 #!/usr/bin/env node
 
-// Immediate startup logging to stderr for CI debugging
-console.error('[serve.ts] Process started, PID:', process.pid);
-console.error('[serve.ts] Node version:', process.version);
-console.error('[serve.ts] Current directory:', process.cwd());
-
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import {
@@ -15,10 +10,9 @@ import {
     type Tool,
     type Resource,
 } from '@modelcontextprotocol/sdk/types.js';
-import { logger, LogLevel } from './utils/logger.js';
+import { logger } from './utils/logger.js';
 
-// Enable debug logging for MCP server
-logger.setLevel(LogLevel.DEBUG);
+// MCP server logger will automatically be quiet unless MCP_DEBUG is set
 logger.info('MCP Server starting up...');
 logger.debug('Node version:', process.version);
 logger.debug('Working directory:', process.cwd());
