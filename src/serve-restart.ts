@@ -67,11 +67,16 @@ const startServer = () => {
 
     const serverPath = join(__dirname, 'serve.js');
     const child = spawn(process.execPath, [serverPath], {
-        stdio: 'inherit',
+        stdio: ['inherit', 'inherit', 'pipe'],
         env: process.env,
     });
 
     let shuttingDown = false;
+
+    // Forward stderr but don't interfere with MCP protocol
+    child.stderr?.on('data', (data) => {
+        process.stderr.write(data);
+    });
     let restartTimer: NodeJS.Timeout | null = null;
 
     // Track successful startup
