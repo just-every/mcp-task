@@ -1,44 +1,54 @@
 # @just-every/mcp-task
 
-Async MCP server for running long-running AI tasks with real-time progress monitoring.
+[![npm version](https://badge.fury.io/js/%40just-every%2Fmcp-task.svg)](https://www.npmjs.com/package/@just-every/mcp-task)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-[![npm version](https://badge.fury.io/js/@just-every%2Fmcp-task.svg)](https://www.npmjs.com/package/@just-every/mcp-task)
+Async MCP server for running long-running AI tasks with real-time progress monitoring using [@just-every/task](https://github.com/just-every/task).
 
-## Overview
+## Quick Start
 
-This MCP (Model Context Protocol) server enables asynchronous execution of complex AI tasks using the `@just-every/task` package. It provides a non-blocking interface for running tasks with different AI models, returning task IDs immediately and allowing clients to monitor progress in real-time.
+### 1. Create or use an environment file
 
-## Features
-
-- **Async Task Execution**: Non-blocking task execution with immediate task ID return
-- **Real-time Progress Monitoring**: Live status updates using `taskStatus()` function
-- **Flexible Model Support**: Use model classes or specific models (claude-opus-4, grok-4, o3, etc.)
-- **Task Management**: Complete lifecycle management with status checking, cancellation, and result retrieval
-- **Integrated Tools**: Built-in web search and command execution capabilities
-- **Robust Error Handling**: Proper event handling for task completion and failures
-
-## Installation
-
-### Claude Code
-
+Option A: Create a new `.llm.env` file in your home directory:
 ```bash
-claude mcp add task-runner -s user -- npx -y @just-every/mcp-task
+# Download example env file
+curl -o ~/.llm.env https://raw.githubusercontent.com/just-every/mcp-task/main/.env.example
+
+# Edit with your API keys
+nano ~/.llm.env
 ```
 
-### VS Code
-
+Option B: Use an existing `.env` file (must use absolute path):
 ```bash
-code --add-mcp '{"name":"task-runner","command":"npx","args":["-y","@just-every/mcp-task"]}'
+# Example: /Users/yourname/projects/myproject/.env
+# Example: /home/yourname/workspace/.env
 ```
 
-### Raw JSON (works in any MCP client)
+### 2. Install
 
+#### Claude Code
+```bash
+# Using ~/.llm.env
+claude mcp add task -s user -e ENV_FILE=$HOME/.llm.env -- npx -y @just-every/mcp-task
+
+# Using existing .env file (absolute path required)
+claude mcp add task -s user -e ENV_FILE=/absolute/path/to/your/.env -- npx -y @just-every/mcp-task
+
+# For debugging, check if ENV_FILE is being passed correctly:
+claude mcp list
+```
+
+#### Other MCP Clients
+Add to your MCP configuration:
 ```json
 {
   "mcpServers": {
-    "task-runner": {
+    "task": {
       "command": "npx",
-      "args": ["-y", "@just-every/mcp-task"]
+      "args": ["-y", "@just-every/mcp-task"],
+      "env": {
+        "ENV_FILE": "/path/to/.llm.env"
+      }
     }
   }
 }
@@ -145,20 +155,34 @@ Tasks have access to:
 - **Web Search**: Search the web for information using `@just-every/search`
 - **Command Execution**: Run shell commands via the `run_command` tool
 
-## Environment Variables
+## API Keys
 
-Create a `.env` file with your API keys:
+The task runner requires API keys for the AI models you want to use. Add them to your `.llm.env` file:
 
 ```bash
-# Required for AI models
+# Core AI Models
 ANTHROPIC_API_KEY=your-anthropic-key
 OPENAI_API_KEY=your-openai-key  
-GROK_API_KEY=your-grok-key
+XAI_API_KEY=your-xai-key           # For Grok models
+GOOGLE_API_KEY=your-google-key     # For Gemini models
 
-# Optional for search functionality
+# Search Providers (optional, for web_search tool)
+BRAVE_API_KEY=your-brave-key
 SERPER_API_KEY=your-serper-key
 PERPLEXITY_API_KEY=your-perplexity-key
+OPENROUTER_API_KEY=your-openrouter-key
 ```
+
+### Getting API Keys
+
+- **Anthropic**: [console.anthropic.com](https://console.anthropic.com/)
+- **OpenAI**: [platform.openai.com](https://platform.openai.com/)
+- **xAI (Grok)**: [x.ai](https://x.ai/)
+- **Google (Gemini)**: [makersuite.google.com](https://makersuite.google.com/)
+- **Brave Search**: [brave.com/search/api](https://brave.com/search/api/)
+- **Serper**: [serper.dev](https://serper.dev/)
+- **Perplexity**: [perplexity.ai](https://perplexity.ai/)
+- **OpenRouter**: [openrouter.ai](https://openrouter.ai/)
 
 ## Task Lifecycle
 
@@ -170,11 +194,28 @@ PERPLEXITY_API_KEY=your-perplexity-key
 
 Tasks are automatically cleaned up after 24 hours.
 
+## CLI Usage
+
+The task runner can also be used directly from the command line:
+
+```bash
+# Run as MCP server (for debugging)
+ENV_FILE=~/.llm.env npx @just-every/mcp-task
+
+# Or if installed globally
+npm install -g @just-every/mcp-task
+ENV_FILE=~/.llm.env mcp-task serve
+```
+
 ## Development
 
 ### Setup
 
 ```bash
+# Clone the repository
+git clone https://github.com/just-every/mcp-task.git
+cd mcp-task
+
 # Install dependencies
 npm install
 
@@ -185,8 +226,8 @@ npm run build
 ### Development Mode
 
 ```bash
-# Run in development mode
-npm run serve:dev
+# Run in development mode with your env file
+ENV_FILE=~/.llm.env npm run serve:dev
 ```
 
 ### Testing
@@ -228,10 +269,50 @@ Contributions are welcome! Please:
 
 ## Troubleshooting
 
+### MCP Server Shows "Failed" in Claude
+
+If you see "task ✘ failed" in Claude, check these common issues:
+
+1. **Missing API Keys**: The most common issue is missing API keys. Check that your ENV_FILE is properly configured:
+   ```bash
+   # Test if ENV_FILE is working
+   ENV_FILE=/path/to/your/.llm.env npx @just-every/mcp-task
+   ```
+
+2. **Incorrect Installation Command**: Make sure you're using `-e` for environment variables:
+   ```bash
+   # Correct - environment variable passed with -e flag before --
+   claude mcp add task -s user -e ENV_FILE=$HOME/.llm.env -- npx -y @just-every/mcp-task
+   
+   # Incorrect - trying to pass as argument
+   claude mcp add task -s user -- npx -y @just-every/mcp-task --env ENV_FILE=$HOME/.llm.env
+   ```
+
+3. **Path Issues**: ENV_FILE must use absolute paths:
+   ```bash
+   # Good
+   ENV_FILE=/Users/yourname/.llm.env
+   ENV_FILE=$HOME/.llm.env
+   
+   # Bad
+   ENV_FILE=.env
+   ENV_FILE=~/.llm.env  # ~ not expanded in some contexts
+   ```
+
+4. **Verify Installation**: Check your MCP configuration:
+   ```bash
+   claude mcp list
+   ```
+
+5. **Debug Mode**: For detailed error messages, run manually:
+   ```bash
+   ENV_FILE=/path/to/.llm.env npx @just-every/mcp-task
+   ```
+
 ### Task Not Progressing
 - Check task status with `check_task_status` to see live progress
 - Look for error messages prefixed with "ERROR:" in the output
-- Verify API keys are properly configured in `.env`
+- Verify API keys are properly configured
 
 ### Model Not Found
 - Ensure model name is correctly spelled

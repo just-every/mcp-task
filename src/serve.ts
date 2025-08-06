@@ -21,8 +21,9 @@ import { dirname, join } from 'path';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// Load .env file from project root
-config({ path: join(__dirname, '..', '.env') });
+// Load environment variables from ENV_FILE or .env
+const envFile = process.env.ENV_FILE || join(__dirname, '..', '.env');
+config({ path: envFile });
 
 const execAsync = promisify(exec);
 
