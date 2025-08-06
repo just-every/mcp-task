@@ -207,6 +207,32 @@ npm install -g @just-every/mcp-task
 ENV_FILE=~/.llm.env mcp-task serve
 ```
 
+## Configuration
+
+### Task Timeout Settings
+
+The server includes robust safety mechanisms to prevent tasks from getting stuck. All timeouts are configurable via environment variables:
+
+```bash
+# Default production settings (optimized for long-running tasks)
+TASK_TIMEOUT=18000000             # 5 hours max runtime (default)
+TASK_STUCK_THRESHOLD=300000       # 5 minutes inactivity = stuck (default)
+TASK_HEALTH_CHECK_INTERVAL=60000  # Check every 1 minute (default)
+
+# For shorter tasks, you might prefer:
+TASK_TIMEOUT=300000               # 5 minutes max runtime
+TASK_STUCK_THRESHOLD=60000        # 1 minute inactivity
+TASK_HEALTH_CHECK_INTERVAL=15000  # Check every 15 seconds
+
+# Add to your .llm.env or pass as environment variables
+```
+
+**Safety Features:**
+- **Automatic timeout**: Tasks exceeding `TASK_TIMEOUT` are automatically failed
+- **Inactivity detection**: Tasks with no activity for `TASK_STUCK_THRESHOLD` are marked as stuck
+- **Health monitoring**: Regular checks every `TASK_HEALTH_CHECK_INTERVAL` ensure tasks are progressing
+- **Error recovery**: Uncaught exceptions and promise rejections are handled gracefully
+
 ## Development
 
 ### Setup

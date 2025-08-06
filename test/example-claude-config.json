@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "task-runner": {
+      "command": "node",
+      "args": ["/Users/YOUR_USERNAME/path/to/mcp-task/dist/serve.js"],
+      "env": {
+        "LOG_LEVEL": "info"
+      }
+    }
+  }
+}

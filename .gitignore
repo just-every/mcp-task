@@ -7,4 +7,13 @@ dist/
 .env.local
 coverage/
 .vscode/
-.idea/# Trigger deployment
+.idea/
+
+# Temporary test files
+*.tmp
+*~
+haiku.txt
+coding_haiku.txt
+fibonacci.py
+web_app_implementation_plan.md
+summaries/

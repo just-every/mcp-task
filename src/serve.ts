@@ -17,22 +17,41 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import { getAllTools } from './tools.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 // Load environment variables from ENV_FILE or .env
 const envFile = process.env.ENV_FILE || join(__dirname, '..', '.env');
+
+// Temporarily capture console output to prevent dotenv from polluting stdout
+const originalConsoleLog = console.log;
+const originalConsoleInfo = console.info;
+if (process.env.MCP_MODE === 'true' || process.env.MCP_QUIET === 'true') {
+    console.log = () => {};
+    console.info = () => {};
+}
+
 config({ path: envFile });
+
+// Restore console methods
+if (process.env.MCP_MODE === 'true' || process.env.MCP_QUIET === 'true') {
+    console.log = originalConsoleLog;
+    console.info = originalConsoleInfo;
+}
 
 const execAsync = promisify(exec);
 
 // Dynamic import for Agent to avoid TypeScript issues
 let AgentClass: typeof Agent;
 
-logger.info('MCP Task Server starting up...');
-logger.debug('Node version:', process.version);
-logger.debug('Working directory:', process.cwd());
+// Only log if not in MCP mode (MCP requires clean stdout)
+if (process.env.MCP_MODE !== 'true') {
+    logger.info('MCP Task Server starting up...');
+    logger.debug('Node version:', process.version);
+    logger.debug('Working directory:', process.cwd());
+}
 
 // Ensure the process doesn't exit on stdio errors
 process.stdin.on('error', () => {});
@@ -62,7 +81,9 @@ const POPULAR_MODELS = [
     'claude-opus-4',
 ];
 
-logger.debug('Creating MCP server instance...');
+if (process.env.MCP_MODE !== 'true') {
+    logger.debug('Creating MCP server instance...');
+}
 const server = new Server(
     {
         name: 'task-runner',
@@ -74,7 +95,9 @@ const server = new Server(
         },
     }
 );
-logger.info('MCP server instance created successfully');
+if (process.env.MCP_MODE !== 'true') {
+    logger.info('MCP server instance created successfully');
+}
 
 // Add error handling for the server instance
 server.onerror = error => {
@@ -108,6 +131,14 @@ const RUN_TASK_TOOL: Tool = {
             output: {
                 type: 'string',
                 description: 'The desired output/success state',
+            },
+            files: {
+                type: 'array',
+                description:
+                    'Array of file paths to include in the task context',
+                items: {
+                    type: 'string',
+                },
             },
         },
         required: ['task'],
@@ -183,7 +214,9 @@ const LIST_TASKS_TOOL: Tool = {
 
 // Handle tool listing
 server.setRequestHandler(ListToolsRequestSchema, async () => {
-    logger.debug('Received ListTools request');
+    if (process.env.MCP_MODE !== 'true') {
+        logger.debug('Received ListTools request');
+    }
     const response = {
         tools: [
             RUN_TASK_TOOL,
@@ -193,17 +226,24 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             LIST_TASKS_TOOL,
         ],
     };
-    logger.debug(
-        'Returning tools:',
-        response.tools.map(t => t.name)
-    );
+    if (process.env.MCP_MODE !== 'true') {
+        logger.debug(
+            'Returning tools:',
+            response.tools.map(t => t.name)
+        );
+    }
     return response;
 });
 
 // Handle tool execution
 server.setRequestHandler(CallToolRequestSchema, async request => {
-    logger.info('Received CallTool request:', request.params.name);
-    logger.debug('Request params:', JSON.stringify(request.params, null, 2));
+    if (process.env.MCP_MODE !== 'true') {
+        logger.info('Received CallTool request:', request.params.name);
+        logger.debug(
+            'Request params:',
+            JSON.stringify(request.params, null, 2)
+        );
+    }
 
     const toolName = request.params.name;
 
@@ -220,6 +260,58 @@ server.setRequestHandler(CallToolRequestSchema, async request => {
                 const task = taskManager.getTask(args.task_id);
                 if (!task) {
                     throw new Error(`Task ${args.task_id} not found`);
+                }
+
+                // Check for stuck task indicators
+                let warningMessage = null;
+                if (task.status === 'running') {
+                    const now = Date.now();
+
+                    // Check last activity time
+                    if (task.lastActivityTime) {
+                        const inactiveTime =
+                            now - task.lastActivityTime.getTime();
+                        if (inactiveTime > 60000) {
+                            // 1 minute
+                            warningMessage = `Warning: No activity for ${Math.round(inactiveTime / 1000)} seconds`;
+                        }
+                    }
+
+                    // Check runtime
+                    if (task.startedAt) {
+                        const runtime = now - task.startedAt.getTime();
+                        if (runtime > 5 * 60 * 1000) {
+                            // 5 minutes
+                            warningMessage = `Warning: Task running for ${Math.round(runtime / 60000)} minutes`;
+                        }
+                    }
+
+                    // Check error count
+                    if (task.errorCount && task.errorCount > 2) {
+                        warningMessage = `Warning: ${task.errorCount} errors encountered`;
+                    }
+                }
+
+                // Calculate recommended check_after based on task runtime
+                let recommendedCheckAfter = 120; // Default max of 2 minutes
+                if (task.status === 'running' && task.startedAt) {
+                    const runtimeMs = Date.now() - task.startedAt.getTime();
+                    const runtimeSeconds = Math.floor(runtimeMs / 1000);
+
+                    // Progressive backoff: 5s for first 5s, 10s for first 10s, then scale up
+                    if (runtimeSeconds <= 5) {
+                        recommendedCheckAfter = 5;
+                    } else if (runtimeSeconds <= 10) {
+                        recommendedCheckAfter = 10;
+                    } else if (runtimeSeconds <= 30) {
+                        recommendedCheckAfter = 15;
+                    } else if (runtimeSeconds <= 60) {
+                        recommendedCheckAfter = 30;
+                    } else if (runtimeSeconds <= 120) {
+                        recommendedCheckAfter = 60;
+                    } else {
+                        recommendedCheckAfter = 120; // Max 2 minutes for long-running tasks
+                    }
                 }
 
                 // Get live progress for running tasks using taskStatus()
@@ -247,9 +339,17 @@ server.setRequestHandler(CallToolRequestSchema, async request => {
                                     output: task.output, // Shows result if complete, error if failed
                                     progress: currentProgress || task.progress, // Live status from taskStatus() or cached
                                     messageCount: task.messages.length,
+                                    requestCount: task.requestCount || 0,
                                     recentEvents: activity.recentEvents,
                                     toolCalls: activity.toolCalls,
                                     lastActivity: activity.lastActivity,
+                                    check_after:
+                                        task.status === 'running'
+                                            ? recommendedCheckAfter
+                                            : null,
+                                    warning: warningMessage,
+                                    errorCount: task.errorCount,
+                                    lastError: task.lastError,
                                 },
                                 null,
                                 2
@@ -363,19 +463,36 @@ server.setRequestHandler(CallToolRequestSchema, async request => {
             throw new Error('Task parameter is required and must be a string');
         }
 
-        logger.info(`Processing task request`);
-        logger.debug('Task parameters:', {
-            model: args.model,
-            context: args.context,
-            task: args.task,
-            output: args.output,
-        });
+        if (process.env.MCP_MODE !== 'true') {
+            logger.info(`Processing task request`);
+            logger.debug('Task parameters:', {
+                model: args.model,
+                context: args.context,
+                task: args.task,
+                output: args.output,
+            });
+        }
 
         // Build the task prompt
         let fullPrompt = '';
         if (args.context) {
             fullPrompt += `Context:\n${args.context}\n\n`;
         }
+
+        // Include file contents if provided
+        if (args.files && Array.isArray(args.files) && args.files.length > 0) {
+            fullPrompt += 'Files provided:\n';
+            for (const filePath of args.files) {
+                try {
+                    const { readFile } = await import('fs/promises');
+                    const content = await readFile(filePath, 'utf8');
+                    fullPrompt += `\n=== ${filePath} ===\n${content}\n=== End of ${filePath} ===\n\n`;
+                } catch (error: any) {
+                    fullPrompt += `\n=== ${filePath} ===\nError reading file: ${error.message}\n=== End of ${filePath} ===\n\n`;
+                }
+            }
+        }
+
         fullPrompt += `Task:\n${args.task}`;
         if (args.output) {
             fullPrompt += `\n\nDesired Output:\n${args.output}`;
@@ -383,8 +500,9 @@ server.setRequestHandler(CallToolRequestSchema, async request => {
 
         // Create task with tools
         const searchTools = await getSearchTools();
+        const customTools = getAllTools();
 
-        // Create command line tool using createToolFunction
+        // Create command line tool using createToolFunction (keeping for backward compatibility)
         const commandTool = createToolFunction(
             async (command: string) => {
                 try {
@@ -405,7 +523,7 @@ server.setRequestHandler(CallToolRequestSchema, async request => {
             'run_command'
         );
 
-        const allTools = [...searchTools, commandTool];
+        const allTools = [...searchTools, ...customTools, commandTool];
 
         // Determine model configuration
         let modelClass: string | undefined;
@@ -431,6 +549,7 @@ server.setRequestHandler(CallToolRequestSchema, async request => {
             context: args.context,
             task: args.task,
             output: args.output,
+            files: args.files,
         });
 
         // Create agent with tools
@@ -446,9 +565,22 @@ server.setRequestHandler(CallToolRequestSchema, async request => {
         // Start task execution in background (non-blocking)
         taskManager.executeTask(taskId, agent, fullPrompt).catch(error => {
             logger.error(`Background task ${taskId} failed:`, error);
+
+            // Ensure task is marked as failed
+            const task = taskManager.getTask(taskId);
+            if (task && task.status === 'running') {
+                logger.error(
+                    `Marking stuck task ${taskId} as failed after error`
+                );
+                task.status = 'failed';
+                task.output = `ERROR: Task execution failed: ${error.message}`;
+                task.completedAt = new Date();
+            }
         });
 
-        logger.info(`Task ${taskId} queued for execution`);
+        if (process.env.MCP_MODE !== 'true') {
+            logger.info(`Task ${taskId} queued for execution`);
+        }
 
         // Return task ID immediately
         return {
@@ -481,11 +613,16 @@ server.setRequestHandler(CallToolRequestSchema, async request => {
 // Start the server
 async function runServer() {
     try {
-        logger.info('Starting MCP server...');
-        logger.debug('Creating StdioServerTransport...');
+        if (process.env.MCP_MODE !== 'true') {
+            logger.info('Starting MCP server...');
+            logger.debug('Creating StdioServerTransport...');
+        }
 
         const transport = new StdioServerTransport();
-        logger.debug('Transport created, connecting to server...');
+
+        if (process.env.MCP_MODE !== 'true') {
+            logger.debug('Transport created, connecting to server...');
+        }
 
         // Add transport error handling
         transport.onerror = error => {
@@ -500,6 +637,11 @@ async function runServer() {
         const cleanup = async (signal: string) => {
             logger.info(`Received ${signal}, shutting down gracefully...`);
             try {
+                // Stop task manager first
+                taskManager.stopCleanup();
+                logger.info('Task manager stopped');
+
+                // Then close server
                 await server.close();
                 logger.info('Server closed successfully');
                 process.exit(0);
@@ -516,16 +658,43 @@ async function runServer() {
         process.on('uncaughtException', error => {
             logger.error('Uncaught exception:', error.message);
             logger.error('Stack trace:', error.stack);
+
+            // Try to gracefully handle task-related errors
+            if (
+                error.message &&
+                (error.message.includes('Task') ||
+                    error.message.includes('task'))
+            ) {
+                logger.error(
+                    'Task-related uncaught exception, attempting recovery'
+                );
+                // Don't exit, let TaskManager handle cleanup
+                return;
+            }
+
             if (error && error.message && error.message.includes('EPIPE')) {
                 logger.warn('Pipe error detected, keeping server alive');
                 return;
             }
+
+            // For other critical errors, exit
+            logger.error('Critical error, shutting down');
+            taskManager.stopCleanup(); // Clean up tasks before exit
             process.exit(1);
         });
 
         process.on('unhandledRejection', (reason, promise) => {
             logger.error('Unhandled Rejection at:', promise);
             logger.error('Rejection reason:', reason);
+
+            // Check if it's task-related
+            const reasonStr = String(reason);
+            if (reasonStr.includes('Task') || reasonStr.includes('task')) {
+                logger.error(
+                    'Task-related unhandled rejection, attempting recovery'
+                );
+                // Don't crash, let tasks fail gracefully
+            }
         });
 
         // Log process events
@@ -549,13 +718,16 @@ async function runServer() {
         });
 
         await server.connect(transport);
-        logger.info('MCP server connected and running successfully!');
-        logger.info('Ready to receive requests');
-        logger.debug('Server details:', {
-            name: 'task-runner',
-            version: '0.1.0',
-            pid: process.pid,
-        });
+
+        if (process.env.MCP_MODE !== 'true') {
+            logger.info('MCP server connected and running successfully!');
+            logger.info('Ready to receive requests');
+            logger.debug('Server details:', {
+                name: 'task-runner',
+                version: '0.1.0',
+                pid: process.pid,
+            });
+        }
 
         // Log heartbeat every 30 seconds
         setInterval(() => {
@@ -572,7 +744,9 @@ async function runServer() {
 }
 
 // Start the server
-logger.info('Initializing MCP server...');
+if (process.env.MCP_MODE !== 'true') {
+    logger.info('Initializing MCP server...');
+}
 runServer().catch(error => {
     logger.error('Fatal server error:', error.message);
     logger.error('Stack trace:', error.stack);
