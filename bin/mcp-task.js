@@ -9,18 +9,17 @@ const __dirname = dirname(__filename);
 const args = process.argv.slice(2);
 
 async function main() {
-  // Default to 'serve' if no arguments provided (for MCP usage)
-  const command = args[0] || 'serve';
-  
   // Check if compiled dist exists
   const distExists = existsSync(join(__dirname, '..', 'dist'));
   
   if (distExists) {
     // Use compiled JavaScript for production (fast startup)
-    if (command === 'serve') {
+    if (args.length === 0) {
+      // Default to serve for MCP usage (no args)
       const servePath = join(__dirname, '..', 'dist', 'serve-restart.js');
       await import(servePath);
     } else {
+      // Run through CLI parser for any commands/options
       const cliPath = join(__dirname, '..', 'dist', 'index.js');
       await import(cliPath);
     }
@@ -29,10 +28,12 @@ async function main() {
     try {
       await import('tsx/esm');
       
-      if (command === 'serve') {
+      if (args.length === 0) {
+        // Default to serve for MCP usage (no args)
         const servePath = join(__dirname, '..', 'src', 'serve-restart.ts');
         await import(servePath);
       } else {
+        // Run through CLI parser for any commands/options
         const cliPath = join(__dirname, '..', 'src', 'index.ts');
         await import(cliPath);
       }

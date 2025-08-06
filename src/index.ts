@@ -28,4 +28,9 @@ program
         await import('./serve.js');
     });
 
+// Default to serve if no command provided
+if (process.argv.length === 2) {
+    process.argv.push('serve');
+}
+
 program.parse();
