@@ -11,10 +11,9 @@ import {
 import { logger } from './utils/logger.js';
 import { TaskManager } from './utils/task-manager.js';
 import type { Agent } from '@just-every/ensemble';
-import { createToolFunction } from '@just-every/ensemble';
+// createToolFunction no longer needed - using bash tool from tools.ts instead
 import { getSearchTools } from '@just-every/search';
-import { exec } from 'child_process';
-import { promisify } from 'util';
+// exec and promisify no longer needed - using bash tool from tools.ts instead
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { getAllTools } from './tools.js';
@@ -40,8 +39,6 @@ if (process.env.MCP_MODE === 'true' || process.env.MCP_QUIET === 'true') {
     console.log = originalConsoleLog;
     console.info = originalConsoleInfo;
 }
-
-const execAsync = promisify(exec);
 
 // Dynamic import for Agent to avoid TypeScript issues
 let AgentClass: typeof Agent;
@@ -111,31 +108,38 @@ const taskManager = TaskManager.getInstance();
 const RUN_TASK_TOOL: Tool = {
     name: 'run_task',
     description:
-        'Start a long-running AI task asynchronously. Returns a task ID immediately that can be used to check status and retrieve results.',
+        'Start a complex AI task. Perform advanced reasoning and analysis with state of the art LLMs. Returns a task ID immediately to check status and retrieve results.',
+    annotations: {
+        title: 'Run AI Task',
+        readOnlyHint: false, // Creates and executes a new task
+        destructiveHint: false, // Doesn't destroy existing data
+        idempotentHint: false, // Each call creates a new task
+        openWorldHint: true, // Task may interact with external services/APIs
+    },
     inputSchema: {
         type: 'object',
         properties: {
+            task: {
+                type: 'string',
+                description: 'The task prompt - what to perform (required)',
+            },
             model: {
                 type: 'string',
-                description: `Model class OR specific model name. Classes: ${MODEL_CLASSES.join(', ')}. Popular models: ${POPULAR_MODELS.join(', ')}`,
+                description: `Optional: Model class OR specific model name. Classes: ${MODEL_CLASSES.join(', ')}. Popular models: ${POPULAR_MODELS.join(', ')}. Defaults to 'standard' if not specified.`,
                 enum: [...MODEL_CLASSES, ...POPULAR_MODELS],
             },
             context: {
                 type: 'string',
-                description: 'Background context for the task',
-            },
-            task: {
-                type: 'string',
-                description: 'The task prompt - what to perform',
+                description: 'Optional: Background context for the task',
             },
             output: {
                 type: 'string',
-                description: 'The desired output/success state',
+                description: 'Optional: The desired output/success state',
             },
             files: {
                 type: 'array',
                 description:
-                    'Array of file paths to include in the task context',
+                    'Optional: Array of file paths to include in the task context',
                 items: {
                     type: 'string',
                 },
@@ -149,6 +153,13 @@ const CHECK_TASK_STATUS_TOOL: Tool = {
     name: 'check_task_status',
     description:
         'Check the status of a running task. Returns current status, progress, and partial results if available.',
+    annotations: {
+        title: 'Check Task Status',
+        readOnlyHint: true, // Only reads task status
+        destructiveHint: false, // Doesn't modify or destroy data
+        idempotentHint: false, // task_id returns status each time
+        openWorldHint: false, // Only queries local task state
+    },
     inputSchema: {
         type: 'object',
         properties: {
@@ -164,6 +175,13 @@ const CHECK_TASK_STATUS_TOOL: Tool = {
 const GET_TASK_RESULT_TOOL: Tool = {
     name: 'get_task_result',
     description: 'Get the final result of a completed task.',
+    annotations: {
+        title: 'Get Task Result',
+        readOnlyHint: true, // Only reads completed task result
+        destructiveHint: false, // Doesn't modify or destroy data
+        idempotentHint: false, // task_id returns result each time
+        openWorldHint: false, // Only queries local task state
+    },
     inputSchema: {
         type: 'object',
         properties: {
@@ -179,6 +197,13 @@ const GET_TASK_RESULT_TOOL: Tool = {
 const CANCEL_TASK_TOOL: Tool = {
     name: 'cancel_task',
     description: 'Cancel a pending or running task.',
+    annotations: {
+        title: 'Cancel Task',
+        readOnlyHint: false, // Modifies task state
+        destructiveHint: true, // Cancels/stops a running task
+        idempotentHint: true, // Cancelling an already cancelled task is safe
+        openWorldHint: false, // Only affects local task state
+    },
     inputSchema: {
         type: 'object',
         properties: {
@@ -194,12 +219,19 @@ const CANCEL_TASK_TOOL: Tool = {
 const LIST_TASKS_TOOL: Tool = {
     name: 'list_tasks',
     description: 'List all tasks with their current status.',
+    annotations: {
+        title: 'List All Tasks',
+        readOnlyHint: true, // Only reads task list
+        destructiveHint: false, // Doesn't modify or destroy data
+        idempotentHint: false, // Task list may change between calls
+        openWorldHint: false, // Only queries local task state
+    },
     inputSchema: {
         type: 'object',
         properties: {
             status_filter: {
                 type: 'string',
-                description: 'Optional filter by status',
+                description: 'Optional: Filter tasks by status',
                 enum: [
                     'pending',
                     'running',
@@ -209,6 +241,7 @@ const LIST_TASKS_TOOL: Tool = {
                 ],
             },
         },
+        required: [], // All parameters are optional
     },
 };
 
@@ -502,28 +535,8 @@ server.setRequestHandler(CallToolRequestSchema, async request => {
         const searchTools = await getSearchTools();
         const customTools = getAllTools();
 
-        // Create command line tool using createToolFunction (keeping for backward compatibility)
-        const commandTool = createToolFunction(
-            async (command: string) => {
-                try {
-                    const { stdout, stderr } = await execAsync(command);
-                    return `Command executed successfully\nOutput: ${stdout}${stderr ? `\nErrors: ${stderr}` : ''}`;
-                } catch (error: any) {
-                    return `Command failed: ${error.message}`;
-                }
-            },
-            'Execute a shell command and return the output',
-            {
-                command: {
-                    type: 'string',
-                    description: 'The shell command to execute',
-                },
-            },
-            'string', // Return type
-            'run_command'
-        );
-
-        const allTools = [...searchTools, ...customTools, commandTool];
+        // Combine search tools and custom tools (bash tool is included in customTools)
+        const allTools = [...searchTools, ...customTools];
 
         // Determine model configuration
         let modelClass: string | undefined;
