@@ -327,3 +327,7 @@ If you see "task ✘ failed" in Claude, check these common issues:
 ## License
 
 MIT
+
+## Author
+
+Created by Just Every - Building powerful AI tools for developers.
