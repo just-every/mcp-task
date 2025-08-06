@@ -1,189 +1,127 @@
-# @just-every/mcp-read-website-fast
+# @just-every/mcp-task
 
-Fast, token-efficient web content extraction for AI agents - converts websites to clean Markdown.
+MCP server for running long-running AI tasks with configurable models and integrated tools.
 
-[![npm version](https://badge.fury.io/js/@just-every%2Fmcp-read-website-fast.svg)](https://www.npmjs.com/package/@just-every/mcp-read-website-fast)
-[![GitHub Actions](https://github.com/just-every/mcp-read-website-fast/workflows/Release/badge.svg)](https://github.com/just-every/mcp-read-website-fast/actions)
+[![npm version](https://badge.fury.io/js/@just-every%2Fmcp-task.svg)](https://www.npmjs.com/package/@just-every/mcp-task)
 
 ## Overview
 
-Existing MCP web crawlers are slow and consume large quantities of tokens. This pauses the development process and provides incomplete results as LLMs need to parse whole web pages.
-
-This MCP package fetches web pages locally, strips noise, and converts content to clean Markdown while preserving links. Designed for Claude Code, IDEs and LLM pipelines with minimal token footprint. Crawl sites locally with minimal dependencies.
-
-**Note:** This package now uses [@just-every/crawl](https://www.npmjs.com/package/@just-every/crawl) for its core crawling and markdown conversion functionality.
+This MCP (Model Context Protocol) server enables execution of complex AI tasks using the `@just-every/task` package. It provides a flexible interface for running tasks with different AI models, contexts, and integrated search/command tools.
 
 ## Features
 
-- **Fast startup** using official MCP SDK with lazy loading for optimal performance
-- **Content extraction** using Mozilla Readability (same as Firefox Reader View)
-- **HTML to Markdown** conversion with Turndown + GFM support
-- **Smart caching** with SHA-256 hashed URLs
-- **Polite crawling** with robots.txt support and rate limiting
-- **Concurrent fetching** with configurable depth crawling
-- **Stream-first design** for low memory usage
-- **Link preservation** for knowledge graphs
-- **Optional chunking** for downstream processing
+- **Flexible Model Support**: Use model classes (reasoning, standard, vision, fast) or specific model names
+- **Context-Aware Execution**: Provide background context for better task results
+- **Integrated Tools**: Built-in search capabilities and command line access
+- **Extensible Model Registry**: Register custom models on the fly
+- **Robust Error Handling**: Automatic timeout and error management
 
 ## Installation
 
 ### Claude Code
 
 ```bash
-claude mcp add read-website-fast -s user -- npx -y @just-every/mcp-read-website-fast
+claude mcp add task-runner -s user -- npx -y @just-every/mcp-task
 ```
 
 ### VS Code
 
 ```bash
-code --add-mcp '{"name":"read-website-fast","command":"npx","args":["-y","@just-every/mcp-read-website-fast"]}'
+code --add-mcp '{"name":"task-runner","command":"npx","args":["-y","@just-every/mcp-task"]}'
 ```
-
-### Cursor
-
-```bash
-cursor://anysphere.cursor-deeplink/mcp/install?name=read-website-fast&config=eyJyZWFkLXdlYnNpdGUtZmFzdCI6eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsIkBqdXN0LWV2ZXJ5L21jcC1yZWFkLXdlYnNpdGUtZmFzdCJdfX0=
-```
-
-### JetBrains IDEs
-
-Settings → Tools → AI Assistant → Model Context Protocol (MCP) → Add
-
-Choose “As JSON” and paste:
-
-```json
-{"command":"npx","args":["-y","@just-every/mcp-read-website-fast"]}
-```
-
-Or, in the chat window, type /add and fill in the same JSON—both paths land the server in a single step. ￼
 
 ### Raw JSON (works in any MCP client)
 
 ```json
 {
   "mcpServers": {
-    "read-website-fast": {
+    "task-runner": {
       "command": "npx",
-      "args": ["-y", "@just-every/mcp-read-website-fast"]
+      "args": ["-y", "@just-every/mcp-task"]
     }
   }
 }
 ```
 
-Drop this into your client’s mcp.json (e.g. .vscode/mcp.json, ~/.cursor/mcp.json, or .mcp.json for Claude).
+## Available Tools
 
+### `run_task`
 
+Execute a long-running AI task with specified parameters.
 
-## Features
+**Parameters:**
+- `task` (required): The task prompt - what to perform
+- `model` (optional): Model class or specific model name
+- `context` (optional): Background context for the task
+- `output` (optional): The desired output/success state
 
-- **Fast startup** using official MCP SDK with lazy loading for optimal performance
-- **Content extraction** using Mozilla Readability (same as Firefox Reader View)
-- **HTML to Markdown** conversion with Turndown + GFM support
-- **Smart caching** with SHA-256 hashed URLs
-- **Polite crawling** with robots.txt support and rate limiting
-- **Concurrent fetching** with configurable depth crawling
-- **Stream-first design** for low memory usage
-- **Link preservation** for knowledge graphs
-- **Optional chunking** for downstream processing
+**Example Usage:**
 
-### Available Tools
+```javascript
+// Simple task
+{
+  "task": "Research the latest trends in AI development"
+}
 
-- `read_website` - Fetches a webpage and converts it to clean markdown
-  - Parameters:
-    - `url` (required): The HTTP/HTTPS URL to fetch
-    - `pages` (optional): Maximum number of pages to crawl (default: 1, max: 100)
+// Task with model and context
+{
+  "model": "reasoning",
+  "context": "We are building a new AI product for healthcare",
+  "task": "Create a comprehensive market analysis",
+  "output": "A detailed report with competitor analysis and recommendations"
+}
 
-### Available Resources
-
-- `read-website-fast://status` - Get cache statistics
-- `read-website-fast://clear-cache` - Clear the cache directory
-
-## Development Usage
-
-### Install
-
-```bash
-npm install
-npm run build
+// Using a specific model
+{
+  "model": "gpt-4.1",
+  "task": "Generate unit tests for the authentication module",
+  "context": "Using Jest framework in a TypeScript project"
+}
 ```
 
-### Single page fetch
-```bash
-npm run dev fetch https://example.com/article
-```
+## Supported Models
 
-### Crawl with depth
-```bash
-npm run dev fetch https://example.com --depth 2 --concurrency 5
-```
+### Model Classes
+- `reasoning`: Complex reasoning and analysis tasks
+- `standard`: General purpose tasks
+- `vision`: Image and visual processing tasks
+- `fast`: Quick responses for simple tasks
 
-### Output formats
-```bash
-# Markdown only (default)
-npm run dev fetch https://example.com
+### Pre-configured Models
+- `gpt-4.1`, `gpt-4`, `gpt-3.5`: OpenAI models
+- `claude-3`, `claude-3.5`: Anthropic models
+- `grok4`: xAI Grok model
 
-# JSON output with metadata
-npm run dev fetch https://example.com --output json
+Custom model names are automatically registered and can be used directly.
 
-# Both URL and markdown
-npm run dev fetch https://example.com --output both
-```
+## Integrated Tools
 
-### CLI Options
-
-- `-p, --pages <number>` - Maximum number of pages to crawl (default: 1)
-- `-c, --concurrency <number>` - Max concurrent requests (default: 3)
-- `--no-robots` - Ignore robots.txt
-- `--all-origins` - Allow cross-origin crawling
-- `-u, --user-agent <string>` - Custom user agent
-- `--cache-dir <path>` - Cache directory (default: .cache)
-- `-t, --timeout <ms>` - Request timeout in milliseconds (default: 30000)
-- `-o, --output <format>` - Output format: json, markdown, or both (default: markdown)
-
-### Clear cache
-```bash
-npm run dev clear-cache
-```
-
-## Auto-Restart Feature
-
-The MCP server includes automatic restart capability by default for improved reliability:
-
-- Automatically restarts the server if it crashes
-- Handles unhandled exceptions and promise rejections
-- Implements exponential backoff (max 10 attempts in 1 minute)
-- Logs all restart attempts for monitoring
-- Gracefully handles shutdown signals (SIGINT, SIGTERM)
-
-For development/debugging without auto-restart:
-```bash
-# Run directly without restart wrapper
-npm run serve:dev
-```
-
-## Architecture
-
-```
-mcp/
-├── src/
-│   ├── crawler/        # URL fetching, queue management, robots.txt
-│   ├── parser/         # DOM parsing, Readability, Turndown conversion
-│   ├── cache/          # Disk-based caching with SHA-256 keys
-│   ├── utils/          # Logger, chunker utilities
-│   ├── index.ts        # CLI entry point
-│   ├── serve.ts        # MCP server entry point
-│   └── serve-restart.ts # Auto-restart wrapper
-```
+Tasks have access to:
+- **Search Tools**: Web search, document search, and more from `@just-every/search`
+- **Command Execution**: Run shell commands via the `run_command` tool
 
 ## Development
 
+### Setup
+
 ```bash
-# Run in development mode
-npm run dev fetch https://example.com
+# Install dependencies
+npm install
 
 # Build for production
 npm run build
+```
 
+### Development Mode
+
+```bash
+# Run in development mode
+npm run serve:dev
+```
+
+### Testing
+
+```bash
 # Run tests
 npm test
 
@@ -192,6 +130,19 @@ npm run typecheck
 
 # Linting
 npm run lint
+```
+
+## Architecture
+
+```
+mcp-task/
+├── src/
+│   ├── serve.ts        # MCP server implementation
+│   ├── index.ts        # CLI entry point
+│   └── utils/          # Logger utilities
+├── bin/
+│   └── mcp-task.js     # Executable entry
+└── package.json
 ```
 
 ## Contributing
@@ -205,20 +156,17 @@ Contributions are welcome! Please:
 
 ## Troubleshooting
 
-### Cache Issues
-```bash
-npm run dev clear-cache
-```
+### Task Timeout
+- Default timeout is 5 minutes
+- For longer tasks, consider breaking them into smaller subtasks
 
-### Timeout Errors
-- Increase timeout with `-t` flag
-- Check network connectivity
-- Verify URL is accessible
+### Model Not Found
+- Check if the model name is correctly spelled
+- Custom models are automatically registered but may need provider configuration
 
-### Content Not Extracted
-- Some sites block automated access
-- Try custom user agent with `-u` flag
-- Check if site requires JavaScript (not supported)
+### Tool Errors
+- Ensure proper permissions for command execution
+- Check network connectivity for search tools
 
 ## License
 

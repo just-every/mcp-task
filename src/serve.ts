@@ -1,43 +1,75 @@
 #!/usr/bin/env node
 
+import { config } from 'dotenv';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import {
     CallToolRequestSchema,
     ListToolsRequestSchema,
-    ListResourcesRequestSchema,
-    ReadResourceRequestSchema,
     type Tool,
-    type Resource,
 } from '@modelcontextprotocol/sdk/types.js';
 import { logger } from './utils/logger.js';
+import { TaskManager } from './utils/task-manager.js';
+import type { Agent } from '@just-every/ensemble';
+import { createToolFunction } from '@just-every/ensemble';
+import { getSearchTools } from '@just-every/search';
+import { exec } from 'child_process';
+import { promisify } from 'util';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
 
-// MCP server logger will automatically be quiet unless MCP_DEBUG is set
-logger.info('MCP Server starting up...');
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+// Load .env file from project root
+config({ path: join(__dirname, '..', '.env') });
+
+const execAsync = promisify(exec);
+
+// Dynamic import for Agent to avoid TypeScript issues
+let AgentClass: typeof Agent;
+
+logger.info('MCP Task Server starting up...');
 logger.debug('Node version:', process.version);
 logger.debug('Working directory:', process.cwd());
-logger.debug('Environment:', { LOG_LEVEL: process.env.LOG_LEVEL });
 
 // Ensure the process doesn't exit on stdio errors
 process.stdin.on('error', () => {});
 process.stdout.on('error', () => {});
 process.stderr.on('error', () => {});
 
-// Lazy load heavy dependencies
-let fetchMarkdownModule: any;
-let fsPromises: any;
-let pathModule: any;
+// Model class options - these are supported by @just-every/ensemble
+const MODEL_CLASSES = [
+    'reasoning', // Complex reasoning and analysis
+    'vision', // Image and visual processing
+    'standard', // General purpose tasks
+    'mini', // Lightweight, fast responses
+    'reasoning_mini', // Lightweight reasoning
+    'code', // Code generation and analysis
+    'writing', // Creative and professional writing
+    'summary', // Text summarization
+    'vision_mini', // Lightweight vision processing
+    'long', // Long-form content generation
+];
+
+// Popular model name examples
+const POPULAR_MODELS = [
+    'grok-4',
+    'gemini-2.5-pro',
+    'o3',
+    'o3-pro',
+    'claude-opus-4',
+];
 
 logger.debug('Creating MCP server instance...');
 const server = new Server(
     {
-        name: 'read-website-fast',
+        name: 'task-runner',
         version: '0.1.0',
     },
     {
         capabilities: {
             tools: {},
-            resources: {},
         },
     }
 );
@@ -48,58 +80,117 @@ server.onerror = error => {
     logger.error('MCP Server Error:', error);
 };
 
-// Tool definition
-const READ_WEBSITE_TOOL: Tool = {
-    name: 'read_website',
+// Initialize TaskManager
+const taskManager = TaskManager.getInstance();
+
+// Tool definitions
+const RUN_TASK_TOOL: Tool = {
+    name: 'run_task',
     description:
-        'Fast, token-efficient web content extraction - ideal for reading documentation, analyzing content, and gathering information from websites. Converts to clean Markdown while preserving links and structure.',
+        'Start a long-running AI task asynchronously. Returns a task ID immediately that can be used to check status and retrieve results.',
     inputSchema: {
         type: 'object',
         properties: {
-            url: {
+            model: {
                 type: 'string',
-                description: 'HTTP/HTTPS URL to fetch and convert to markdown',
+                description: `Model class or specific model name. Classes: ${MODEL_CLASSES.join(', ')}. Popular models: ${POPULAR_MODELS.join(', ')}`,
+                enum: [...MODEL_CLASSES, ...POPULAR_MODELS],
             },
-            pages: {
-                type: 'number',
-                description: 'Maximum number of pages to crawl (default: 1)',
-                default: 1,
-                minimum: 1,
-                maximum: 100,
+            context: {
+                type: 'string',
+                description: 'Background context for the task',
+            },
+            task: {
+                type: 'string',
+                description: 'The task prompt - what to perform',
+            },
+            output: {
+                type: 'string',
+                description: 'The desired output/success state',
             },
         },
-        required: ['url'],
-    },
-    annotations: {
-        title: 'Read Website',
-        readOnlyHint: true, // Only reads content
-        destructiveHint: false,
-        idempotentHint: true, // Same URL returns same content (with cache)
-        openWorldHint: true, // Interacts with external websites
+        required: ['task'],
     },
 };
 
-// Resources definitions
-const RESOURCES: Resource[] = [
-    {
-        uri: 'read-website-fast://status',
-        name: 'Cache Status',
-        mimeType: 'application/json',
-        description: 'Get cache status information',
+const CHECK_TASK_STATUS_TOOL: Tool = {
+    name: 'check_task_status',
+    description:
+        'Check the status of a running task. Returns current status, progress, and partial results if available.',
+    inputSchema: {
+        type: 'object',
+        properties: {
+            task_id: {
+                type: 'string',
+                description: 'The task ID returned from run_task',
+            },
+        },
+        required: ['task_id'],
     },
-    {
-        uri: 'read-website-fast://clear-cache',
-        name: 'Clear Cache',
-        mimeType: 'application/json',
-        description: 'Clear the cache directory',
+};
+
+const GET_TASK_RESULT_TOOL: Tool = {
+    name: 'get_task_result',
+    description: 'Get the final result of a completed task.',
+    inputSchema: {
+        type: 'object',
+        properties: {
+            task_id: {
+                type: 'string',
+                description: 'The task ID returned from run_task',
+            },
+        },
+        required: ['task_id'],
     },
-];
+};
+
+const CANCEL_TASK_TOOL: Tool = {
+    name: 'cancel_task',
+    description: 'Cancel a pending or running task.',
+    inputSchema: {
+        type: 'object',
+        properties: {
+            task_id: {
+                type: 'string',
+                description: 'The task ID to cancel',
+            },
+        },
+        required: ['task_id'],
+    },
+};
+
+const LIST_TASKS_TOOL: Tool = {
+    name: 'list_tasks',
+    description: 'List all tasks with their current status.',
+    inputSchema: {
+        type: 'object',
+        properties: {
+            status_filter: {
+                type: 'string',
+                description: 'Optional filter by status',
+                enum: [
+                    'pending',
+                    'running',
+                    'completed',
+                    'failed',
+                    'cancelled',
+                ],
+            },
+        },
+    },
+};
 
 // Handle tool listing
 server.setRequestHandler(ListToolsRequestSchema, async () => {
     logger.debug('Received ListTools request');
     const response = {
-        tools: [READ_WEBSITE_TOOL],
+        tools: [
+            RUN_TASK_TOOL,
+            CHECK_TASK_STATUS_TOOL,
+            GET_TASK_RESULT_TOOL,
+            CANCEL_TASK_TOOL,
+            LIST_TASKS_TOOL,
+        ],
     };
     logger.debug(
         'Returning tools:',
@@ -113,203 +204,277 @@ server.setRequestHandler(CallToolRequestSchema, async request => {
     logger.info('Received CallTool request:', request.params.name);
     logger.debug('Request params:', JSON.stringify(request.params, null, 2));
 
-    if (request.params.name !== 'read_website') {
-        const error = `Unknown tool: ${request.params.name}`;
-        logger.error(error);
-        throw new Error(error);
-    }
+    const toolName = request.params.name;
 
     try {
-        // Lazy load the module on first use
-        if (!fetchMarkdownModule) {
-            logger.debug('Lazy loading fetchMarkdown module...');
-            fetchMarkdownModule = await import('./internal/fetchMarkdown.js');
-            logger.info('fetchMarkdown module loaded successfully');
-        }
-
         const args = request.params.arguments as any;
 
-        // Validate URL
-        if (!args.url || typeof args.url !== 'string') {
-            throw new Error('URL parameter is required and must be a string');
-        }
-
-        logger.info(`Processing read request for URL: ${args.url}`);
-        logger.debug('Read parameters:', {
-            url: args.url,
-            pages: args.pages,
-        });
-
-        logger.debug('Calling fetchMarkdown...');
-        
-        // Convert pages to depth (pages - 1 = depth)
-        // pages: 1 = depth: 0 (single page)
-        // pages: 2+ = depth: 1 (crawl one level to get multiple pages)
-        const depth = args.pages > 1 ? 1 : 0;
-        
-        const result = await fetchMarkdownModule.fetchMarkdown(args.url, {
-            depth: depth,
-            respectRobots: false,  // Default to not respecting robots.txt
-            maxPages: args.pages ?? 1,
-        });
-        logger.info('Content fetched successfully');
-
-        // If there's an error but we still have some content, return it with a note
-        if (result.error && result.markdown) {
-            return {
-                content: [
-                    {
-                        type: 'text',
-                        text: `${result.markdown}\n\n---\n*Note: ${result.error}*`,
-                    },
-                ],
-            };
-        }
-
-        // If there's an error and no content, throw it
-        if (result.error && !result.markdown) {
-            throw new Error(result.error);
-        }
-
-        return {
-            content: [{ type: 'text', text: result.markdown }],
-        };
-    } catch (error: any) {
-        logger.error('Error fetching content:', error.message);
-        logger.debug('Error stack:', error.stack);
-        logger.debug('Error details:', {
-            name: error.name,
-            code: error.code,
-            ...error,
-        });
-
-        // Re-throw with more context
-        throw new Error(
-            `Failed to fetch content: ${error instanceof Error ? error.message : 'Unknown error'}`
-        );
-    }
-});
-
-// Handle resource listing
-server.setRequestHandler(ListResourcesRequestSchema, async () => {
-    logger.debug('Received ListResources request');
-    return {
-        resources: RESOURCES,
-    };
-});
-
-// Handle resource reading
-server.setRequestHandler(ReadResourceRequestSchema, async request => {
-    logger.debug('Received ReadResource request:', request.params);
-    const uri = request.params.uri;
-
-    // Lazy load fs and path modules
-    if (!fsPromises) {
-        fsPromises = await import('fs/promises');
-    }
-    if (!pathModule) {
-        pathModule = await import('path');
-    }
-
-    if (uri === 'read-website-fast://status') {
-        try {
-            const cacheDir = '.cache';
-            const files = await fsPromises.readdir(cacheDir).catch(() => []);
-
-            let totalSize = 0;
-            for (const file of files) {
-                const stats = await fsPromises
-                    .stat(pathModule.join(cacheDir, file))
-                    .catch(() => null);
-                if (stats) {
-                    totalSize += stats.size;
+        // Handle async task management tools
+        switch (toolName) {
+            case 'check_task_status': {
+                if (!args.task_id) {
+                    throw new Error('task_id is required');
                 }
+
+                const task = taskManager.getTask(args.task_id);
+                if (!task) {
+                    throw new Error(`Task ${args.task_id} not found`);
+                }
+
+                // Get live progress for running tasks using taskStatus()
+                let currentProgress = null;
+                if (task.status === 'running') {
+                    currentProgress = await taskManager.getTaskProgress(
+                        args.task_id
+                    );
+                }
+
+                const activity = taskManager.getTaskActivity(args.task_id);
+
+                return {
+                    content: [
+                        {
+                            type: 'text',
+                            text: JSON.stringify(
+                                {
+                                    id: task.id,
+                                    status: task.status,
+                                    model: task.model || task.modelClass,
+                                    createdAt: task.createdAt,
+                                    startedAt: task.startedAt,
+                                    completedAt: task.completedAt,
+                                    output: task.output, // Shows result if complete, error if failed
+                                    progress: currentProgress || task.progress, // Live status from taskStatus() or cached
+                                    messageCount: task.messages.length,
+                                    recentEvents: activity.recentEvents,
+                                    toolCalls: activity.toolCalls,
+                                    lastActivity: activity.lastActivity,
+                                },
+                                null,
+                                2
+                            ),
+                        },
+                    ],
+                };
             }
 
-            return {
-                contents: [
-                    {
-                        uri,
-                        mimeType: 'application/json',
-                        text: JSON.stringify(
-                            {
-                                cacheSize: totalSize,
-                                cacheFiles: files.length,
-                                cacheSizeFormatted: `${(totalSize / 1024 / 1024).toFixed(2)} MB`,
-                            },
-                            null,
-                            2
-                        ),
-                    },
-                ],
-            };
-        } catch (error) {
-            return {
-                contents: [
-                    {
-                        uri,
-                        mimeType: 'application/json',
-                        text: JSON.stringify(
-                            {
-                                error: 'Failed to get cache status',
-                                message:
-                                    error instanceof Error
-                                        ? error.message
-                                        : 'Unknown error',
-                            },
-                            null,
-                            2
-                        ),
-                    },
-                ],
-            };
+            case 'get_task_result': {
+                if (!args.task_id) {
+                    throw new Error('task_id is required');
+                }
+
+                const task = taskManager.getTask(args.task_id);
+                if (!task) {
+                    throw new Error(`Task ${args.task_id} not found`);
+                }
+
+                if (
+                    task.status !== 'completed' &&
+                    task.status !== 'failed' &&
+                    task.status !== 'cancelled'
+                ) {
+                    throw new Error(
+                        `Task ${args.task_id} is not complete. Status: ${task.status}`
+                    );
+                }
+
+                return {
+                    content: [
+                        {
+                            type: 'text',
+                            text: task.output || 'No output available',
+                        },
+                    ],
+                };
+            }
+
+            case 'cancel_task': {
+                if (!args.task_id) {
+                    throw new Error('task_id is required');
+                }
+
+                const cancelled = taskManager.cancelTask(args.task_id);
+
+                return {
+                    content: [
+                        {
+                            type: 'text',
+                            text: cancelled
+                                ? `Task ${args.task_id} cancelled successfully`
+                                : `Could not cancel task ${args.task_id} (may be already completed)`,
+                        },
+                    ],
+                };
+            }
+
+            case 'list_tasks': {
+                const allTasks = taskManager.getAllTasks();
+                const filteredTasks = args.status_filter
+                    ? allTasks.filter(t => t.status === args.status_filter)
+                    : allTasks;
+
+                const taskSummaries = filteredTasks.map(t => ({
+                    id: t.id,
+                    status: t.status,
+                    task: t.task.substring(0, 100),
+                    model: t.model || t.modelClass,
+                    createdAt: t.createdAt,
+                    completedAt: t.completedAt,
+                }));
+
+                const stats = taskManager.getStats();
+
+                return {
+                    content: [
+                        {
+                            type: 'text',
+                            text: JSON.stringify(
+                                {
+                                    stats,
+                                    tasks: taskSummaries,
+                                },
+                                null,
+                                2
+                            ),
+                        },
+                    ],
+                };
+            }
+
+            case 'run_task': {
+                // This is the main run_task handler - now async
+                break; // Fall through to the original implementation
+            }
+
+            default:
+                throw new Error(`Unknown tool: ${toolName}`);
         }
-    }
 
-    if (uri === 'read-website-fast://clear-cache') {
-        try {
-            await fsPromises.rm('.cache', { recursive: true, force: true });
-
-            return {
-                contents: [
-                    {
-                        uri,
-                        mimeType: 'application/json',
-                        text: JSON.stringify(
-                            {
-                                status: 'success',
-                                message: 'Cache cleared successfully',
-                            },
-                            null,
-                            2
-                        ),
-                    },
-                ],
-            };
-        } catch (error) {
-            return {
-                contents: [
-                    {
-                        uri,
-                        mimeType: 'application/json',
-                        text: JSON.stringify(
-                            {
-                                status: 'error',
-                                message:
-                                    error instanceof Error
-                                        ? error.message
-                                        : 'Failed to clear cache',
-                            },
-                            null,
-                            2
-                        ),
-                    },
-                ],
-            };
+        // run_task implementation (now async)
+        // Lazy load Agent class and createToolFunction
+        if (!AgentClass) {
+            const ensembleModule = await import('@just-every/ensemble');
+            AgentClass = ensembleModule.Agent;
         }
-    }
 
-    throw new Error(`Unknown resource: ${uri}`);
+        // Validate task parameter
+        if (!args.task || typeof args.task !== 'string') {
+            throw new Error('Task parameter is required and must be a string');
+        }
+
+        logger.info(`Processing task request`);
+        logger.debug('Task parameters:', {
+            model: args.model,
+            context: args.context,
+            task: args.task,
+            output: args.output,
+        });
+
+        // Build the task prompt
+        let fullPrompt = '';
+        if (args.context) {
+            fullPrompt += `Context:\n${args.context}\n\n`;
+        }
+        fullPrompt += `Task:\n${args.task}`;
+        if (args.output) {
+            fullPrompt += `\n\nDesired Output:\n${args.output}`;
+        }
+
+        // Create task with tools
+        const searchTools = await getSearchTools();
+
+        // Create command line tool using createToolFunction
+        const commandTool = createToolFunction(
+            async (command: string) => {
+                try {
+                    const { stdout, stderr } = await execAsync(command);
+                    return `Command executed successfully\nOutput: ${stdout}${stderr ? `\nErrors: ${stderr}` : ''}`;
+                } catch (error: any) {
+                    return `Command failed: ${error.message}`;
+                }
+            },
+            'Execute a shell command and return the output',
+            {
+                command: {
+                    type: 'string',
+                    description: 'The shell command to execute',
+                },
+            },
+            'string', // Return type
+            'run_command'
+        );
+
+        const allTools = [...searchTools, commandTool];
+
+        // Determine model configuration
+        let modelClass: string | undefined;
+        let modelName: string | undefined;
+
+        if (args.model) {
+            // Check if it's a model class
+            if (MODEL_CLASSES.includes(args.model.toLowerCase())) {
+                modelClass = args.model.toLowerCase();
+            } else {
+                // It's a specific model name
+                modelName = args.model;
+            }
+        } else {
+            // Default to standard class if no model specified
+            modelClass = 'standard';
+        }
+
+        // Create task and return ID immediately
+        const taskId = taskManager.createTask({
+            model: modelName,
+            modelClass: modelClass,
+            context: args.context,
+            task: args.task,
+            output: args.output,
+        });
+
+        // Create agent with tools
+        const agent = new AgentClass({
+            name: 'TaskRunner',
+            modelClass: modelClass as any,
+            model: modelName,
+            instructions:
+                'You are a helpful AI assistant that can complete complex tasks.',
+            tools: allTools,
+        });
+
+        // Start task execution in background (non-blocking)
+        taskManager.executeTask(taskId, agent, fullPrompt).catch(error => {
+            logger.error(`Background task ${taskId} failed:`, error);
+        });
+
+        logger.info(`Task ${taskId} queued for execution`);
+
+        // Return task ID immediately
+        return {
+            content: [
+                {
+                    type: 'text',
+                    text: JSON.stringify(
+                        {
+                            task_id: taskId,
+                            status: 'pending',
+                            message:
+                                'Task queued for execution. Use check_task_status to monitor progress.',
+                        },
+                        null,
+                        2
+                    ),
+                },
+            ],
+        };
+    } catch (error: any) {
+        logger.error('Error executing task:', error.message);
+        logger.debug('Error stack:', error.stack);
+
+        throw new Error(
+            `Failed to execute task: ${error instanceof Error ? error.message : 'Unknown error'}`
+        );
+    }
 });
 
 // Start the server
@@ -324,7 +489,6 @@ async function runServer() {
         // Add transport error handling
         transport.onerror = error => {
             logger.error('Transport Error:', error);
-            // Don't exit on transport errors unless it's a connection close
             if (error?.message?.includes('Connection closed')) {
                 logger.info('Connection closed by client');
                 process.exit(0);
@@ -347,25 +511,20 @@ async function runServer() {
         process.on('SIGINT', () => cleanup('SIGINT'));
         process.on('SIGTERM', () => cleanup('SIGTERM'));
 
-        // Handle unexpected errors - be more cautious about exiting
+        // Handle unexpected errors
         process.on('uncaughtException', error => {
             logger.error('Uncaught exception:', error.message);
             logger.error('Stack trace:', error.stack);
-            logger.debug('Full error object:', error);
-            // Try to recover instead of immediately exiting
             if (error && error.message && error.message.includes('EPIPE')) {
                 logger.warn('Pipe error detected, keeping server alive');
                 return;
             }
-            // Only exit for truly fatal errors
             process.exit(1);
         });
 
         process.on('unhandledRejection', (reason, promise) => {
             logger.error('Unhandled Rejection at:', promise);
             logger.error('Rejection reason:', reason);
-            logger.debug('Full rejection details:', { reason, promise });
-            // Log but don't exit for promise rejections
         });
 
         // Log process events
@@ -381,25 +540,23 @@ async function runServer() {
         // Handle stdin closure
         process.stdin.on('end', () => {
             logger.info('Stdin closed, shutting down...');
-            // Give a small delay to ensure any final messages are sent
             setTimeout(() => process.exit(0), 100);
         });
 
         process.stdin.on('error', error => {
             logger.warn('Stdin error:', error);
-            // Don't exit on stdin errors
         });
 
         await server.connect(transport);
         logger.info('MCP server connected and running successfully!');
         logger.info('Ready to receive requests');
         logger.debug('Server details:', {
-            name: 'read-website-fast',
+            name: 'task-runner',
             version: '0.1.0',
             pid: process.pid,
         });
 
-        // Log heartbeat every 30 seconds to show server is alive
+        // Log heartbeat every 30 seconds
         setInterval(() => {
             logger.debug('Server heartbeat - still running...');
         }, 30000);

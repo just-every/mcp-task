@@ -1,10 +1,10 @@
 {
-  "name": "@just-every/mcp-read-website-fast",
-  "version": "0.1.16",
-  "description": "Markdown Content Preprocessor - Fetch web pages, extract content, convert to clean Markdown",
+  "name": "@just-every/mcp-task",
+  "version": "0.1.0",
+  "description": "MCP server for running long-running AI tasks using @just-every/task",
   "main": "dist/index.js",
   "bin": {
-    "mcp-read-website-fast": "bin/mcp-read-website.js"
+    "mcp-task": "bin/mcp-task.js"
   },
   "files": [
     "dist/**/*",
@@ -29,11 +29,9 @@
     "mcp",
     "mcp-server",
     "model-context-protocol",
-    "markdown",
-    "web-scraper",
-    "readability",
-    "content-extraction",
-    "rag",
+    "ai",
+    "task",
+    "automation",
     "llm",
     "claude",
     "cursor",
@@ -42,15 +40,17 @@
   "author": "Just Every",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/just-every/mcp-read-website-fast.git"
+    "url": "git+https://github.com/just-every/mcp-task.git"
   },
   "bugs": {
-    "url": "https://github.com/just-every/mcp-read-website-fast/issues"
+    "url": "https://github.com/just-every/mcp-task/issues"
   },
-  "homepage": "https://github.com/just-every/mcp-read-website-fast#readme",
+  "homepage": "https://github.com/just-every/mcp-task#readme",
   "license": "MIT",
   "dependencies": {
-    "@just-every/crawl": "^1.0.6",
+    "@just-every/ensemble": "^0.2.151",
+    "@just-every/search": "^1.0.10",
+    "@just-every/task": "^0.2.37",
     "@modelcontextprotocol/sdk": "^1.12.3",
     "commander": "^14.0.0"
   },
@@ -60,11 +60,12 @@
     "@types/turndown": "^5.0.4",
     "@typescript-eslint/eslint-plugin": "^8.34.0",
     "@typescript-eslint/parser": "^8.34.0",
+    "dotenv": "^17.2.1",
     "eslint": "^9.28.0",
     "eslint-config-prettier": "^10.1.5",
     "eslint-plugin-prettier": "^5.4.1",
     "tsx": "^4.7.0",
-    "typescript": "^5.3.3",
+    "typescript": "^5.8.3",
     "typescript-eslint": "^8.34.0",
     "vitest": "^3.2.3"
   },

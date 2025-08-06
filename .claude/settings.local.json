@@ -14,6 +14,9 @@
       "Bash(mcp-read-website-fast serve:*)",
       "mcp__read-website-fast__read_website_fast"
     ],
-    "deny": []
+    "deny": [],
+    "additionalDirectories": [
+      "/Users/zemaj/www/just-every"
+    ]
   }
 }

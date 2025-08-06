@@ -4,75 +4,67 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-A fast, token-efficient web content extractor that converts web pages to clean Markdown. Designed for LLM/RAG pipelines, it provides both CLI and MCP server interfaces with smart caching, polite crawling, and minimal dependencies.
+An MCP server for running long-running AI tasks using the @just-every/task package. It provides a flexible interface for executing complex AI workflows with configurable models, context, and integrated search/command tools.
 
 ## Core Modules & Files
 
-- `src/crawler/`: URL fetching, robots.txt respect, queue management
-- `src/parser/`: Readability extraction, HTML to Markdown conversion
-- `src/cache/`: SHA-256 based file caching system
-- `src/internal/fetchMarkdown.ts`: Core API shared by CLI and MCP
-- `src/index.ts`: CLI interface using Commander
-- `src/serve.ts`: MCP server using fastmcp
-- `src/utils/`: Logger and chunking utilities
+- `src/serve.ts`: MCP server implementation with task execution logic
+- `src/index.ts`: CLI entry point for standalone usage
+- `src/utils/logger.ts`: Logging utilities for debugging
+- `bin/mcp-task.js`: Executable entry point for npm package
 
 ## Commands
 
 ### Development
 ```bash
-npm run dev fetch <URL>              # Fetch single page in dev mode
-npm run dev fetch <URL> --pages 3    # Crawl up to 3 pages
-npm run dev clear-cache              # Clear the cache
-npm run serve:dev                    # Run MCP server in dev mode
+npm run serve:dev              # Run MCP server in development mode
+npm run dev                    # Run CLI in development mode
 ```
 
 ### Build & Production
 ```bash
-npm run build                        # Compile TypeScript to JavaScript
-npm run start                        # Run compiled CLI
-npm run serve                        # Run compiled MCP server
+npm run build                  # Compile TypeScript to JavaScript
+npm run start                  # Run compiled CLI
+npm run serve                  # Run compiled MCP server
 ```
 
 ### Code Quality
 ```bash
-npm run lint                         # Run ESLint
-npm run typecheck                    # TypeScript type checking
-npm test                             # Run tests with Vitest
+npm run lint                   # Run ESLint
+npm run typecheck             # TypeScript type checking
+npm test                      # Run tests with Vitest
 ```
 
 ## Architecture
 
-This is a TypeScript-based web content extractor that converts web pages to clean Markdown, designed for LLM/RAG pipelines. It provides both CLI and MCP server interfaces.
+This is a TypeScript-based MCP server that integrates with the @just-every/task package to run long-running AI tasks with various models and tools.
 
 ### Core Components
 
-1. **Fetching & Crawling** (`src/crawler/`):
-   - Uses `undici` for HTTP requests
-   - Respects robots.txt via `robots-parser`
-   - Manages crawl queue with configurable concurrency using `p-limit`
+1. **MCP Server** (`src/serve.ts`):
+   - Uses `@modelcontextprotocol/sdk` for MCP protocol
+   - Implements `run_task` tool for task execution
+   - Handles model selection and configuration
+   - Integrates search tools and command execution
 
-2. **Content Extraction** (`src/parser/`):
-   - `@mozilla/readability` for article extraction (Firefox Reader View engine)
-   - `jsdom` for DOM parsing
-   - `turndown` for HTML→Markdown conversion
-   - Converts relative URLs to absolute in markdown output
+2. **Task Execution**:
+   - Uses `@just-every/task` for AI task management
+   - Supports model classes (reasoning, standard, vision, fast)
+   - Supports specific model names (gpt-4.1, claude-3.5, etc.)
+   - Custom model registration for unknown models
 
-3. **Caching** (`src/cache/`):
-   - File-based cache using SHA-256 hashes
-   - Stores both metadata and content
-
-4. **Entry Points**:
-   - `src/index.ts`: CLI interface using Commander
-   - `src/serve.ts`: MCP server using fastmcp
-   - `src/internal/fetchMarkdown.ts`: Core API used by both interfaces
+3. **Tool Integration**:
+   - Search tools from `@just-every/search`
+   - Command line execution via child_process
+   - Extensible tool system
 
 ### Key Patterns
 
-- Stream-first design for memory efficiency
-- Lazy loading in MCP server for fast startup
-- URL normalization for consistent caching
-- Configurable concurrency with p-limit
-- Automatic relative to absolute URL conversion
+- Event-driven task execution with completion/error handling
+- Lazy loading for optimal startup performance
+- Flexible model configuration system
+- Timeout management for long-running tasks
+- Stream-based output collection
 
 ## Pre-Commit Requirements
 
@@ -97,15 +89,15 @@ Only commit if all commands succeed without errors.
 
 - Use async/await over promises
 - Implement proper error handling with try/catch
-- Follow functional programming patterns where appropriate
 - Keep functions small and focused
 - Use descriptive variable names
+- Handle task events properly (task_complete, task_fatal_error)
 
 ## Testing Instructions
 
 - Run tests with `npm test`
 - Add tests for new features in `test/` directory
-- Mock external dependencies (network, filesystem)
+- Mock external dependencies (AI models, network)
 - Test both success and error cases
 
 ## Repository Etiquette
@@ -120,55 +112,68 @@ Only commit if all commands succeed without errors.
 1. Clone repository
 2. Install Node.js 20.x or higher
 3. Run `npm install`
-4. Copy `.env.example` to `.env` (if needed)
-5. Run `npm run dev` for development
+4. Configure AI model API keys if needed
+5. Run `npm run serve:dev` for development
 
 ## Package Management
 
 - Use exact versions in package.json
-- Run `npm audit` before adding new dependencies
-- Keep dependencies minimal for fast installs
+- Keep dependencies minimal
 - Document why each dependency is needed
+- Run `npm audit` before adding new dependencies
 
 ## Project-Specific Warnings
 
-- **Cache Size**: Monitor cache directory size in production
-- **Rate Limiting**: Respect robots.txt and implement delays
-- **Memory Usage**: Large pages can consume significant memory
-- **URL Validation**: Always validate and sanitize URLs
-- **Concurrent Requests**: Default limit is 3, adjust carefully
+- **Task Timeout**: Default is 5 minutes, adjust carefully
+- **Model Configuration**: Ensure API keys are set for custom models
+- **Memory Usage**: Large tasks can consume significant memory
+- **Error Handling**: Always handle task_fatal_error events
+- **Tool Security**: Be cautious with command execution permissions
 
-## Key Utility Functions & APIs
+## Key APIs & Events
 
-- `fetchMarkdown()`: Core extraction function
-- `CacheManager`: Handles content caching
-- `RobotsChecker`: Validates crawler permissions
-- `MarkdownConverter`: HTML to Markdown conversion
-- `URLNormalizer`: Consistent URL handling
+### Task Configuration
+- `model`: Model class or specific model name
+- `context`: Background information
+- `task`: The main task prompt
+- `output`: Desired output format
+
+### Task Events
+- `message`: Receives task output
+- `task_complete`: Task finished successfully
+- `task_fatal_error`: Task failed with error
+
+### Model Classes
+- `reasoning`: Complex analysis
+- `standard`: General tasks
+- `vision`: Visual processing
+- `fast`: Quick responses
 
 ## MCP Server Integration
 
 When running as MCP server (`npm run serve`):
 
 **Tools:**
-- `read_website_fast` - Main content extraction tool
+- `run_task` - Main task execution tool
 
-**Resources:**
-- `read-website-fast://status` - Cache statistics
-- `read-website-fast://clear-cache` - Clear cache
+**Parameters:**
+- `task` (required): Task prompt
+- `model` (optional): Model selection
+- `context` (optional): Background context
+- `output` (optional): Output requirements
 
 ## Troubleshooting
 
 ### Common Issues
 
-- **Timeout errors**: Increase timeout with `--timeout` flag
-- **Memory issues**: Process pages individually, not in bulk
-- **Cache misses**: Check URL normalization
-- **Extraction failures**: Some sites block automated access
+- **Task timeout**: Increase timeout or break into smaller tasks
+- **Model errors**: Check API keys and model availability
+- **Memory issues**: Monitor task size and complexity
+- **Tool failures**: Verify permissions and network access
 
 ### Debug Mode
 
 Enable debug logging:
 ```bash
-DEBUG=read-website-fast:* npm run dev fetch <URL>
+LOG_LEVEL=debug npm run serve:dev
 ```
