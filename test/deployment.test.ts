@@ -16,12 +16,12 @@ describe('Deployment Tests', () => {
 
   it('should have correct package name', async () => {
     const pkg = await import('../package.json');
-    expect(pkg.name).toBe('@just-every/mcp-read-website-fast');
+    expect(pkg.name).toBe('@just-every/mcp-task');
   });
 
   it('should have bin script configured', async () => {
     const pkg = await import('../package.json');
-    expect(pkg.bin).toHaveProperty('mcp-read-website-fast');
+    expect(pkg.bin).toHaveProperty('mcp-task');
   });
 
   it('should start MCP server without errors', async () => {
@@ -59,7 +59,7 @@ describe('Deployment Tests', () => {
   });
 
   it('should default to serve command when no args provided', async () => {
-    const binPath = join(rootDir, 'bin/mcp-read-website.js');
+    const binPath = join(rootDir, 'bin/mcp-task.js');
     const binProcess = spawn('node', [binPath], {
       stdio: ['pipe', 'pipe', 'pipe'],
       env: { ...process.env, MCP_DEBUG: 'true' }
@@ -88,9 +88,9 @@ describe('Deployment Tests', () => {
     });
   });
 
-  it('should handle fetch command', async () => {
-    const binPath = join(rootDir, 'bin/mcp-read-website.js');
-    const binProcess = spawn('node', [binPath, 'fetch', '--help'], {
+  it('should handle serve command', async () => {
+    const binPath = join(rootDir, 'bin/mcp-task.js');
+    const binProcess = spawn('node', [binPath, 'serve', '--help'], {
       stdio: ['pipe', 'pipe', 'pipe']
     });
 
@@ -104,7 +104,7 @@ describe('Deployment Tests', () => {
       binProcess.on('close', (code) => {
         expect(code).toBe(0);
         expect(stdout).toContain('Usage:');
-        expect(stdout).toContain('fetch');
+        expect(stdout).toContain('serve');
         resolve();
       });
 
@@ -120,11 +120,15 @@ describe('Deployment Tests', () => {
 
   it('should have all required dependencies', async () => {
     const pkg = await import('../package.json');
-    // Dependencies after refactoring to use @just-every/crawl
+    // Dependencies for task runner
     const requiredDeps = [
       '@modelcontextprotocol/sdk',
-      '@just-every/crawl',
-      'commander'
+      '@just-every/task',
+      '@just-every/ensemble',
+      '@just-every/search',
+      'commander',
+      'dotenv',
+      'uuid'
     ];
 
     requiredDeps.forEach(dep => {
