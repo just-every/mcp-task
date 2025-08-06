@@ -94,7 +94,7 @@ const RUN_TASK_TOOL: Tool = {
         properties: {
             model: {
                 type: 'string',
-                description: `Model class or specific model name. Classes: ${MODEL_CLASSES.join(', ')}. Popular models: ${POPULAR_MODELS.join(', ')}`,
+                description: `Model class OR specific model name. Classes: ${MODEL_CLASSES.join(', ')}. Popular models: ${POPULAR_MODELS.join(', ')}`,
                 enum: [...MODEL_CLASSES, ...POPULAR_MODELS],
             },
             context: {
