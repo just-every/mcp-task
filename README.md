@@ -104,6 +104,27 @@ List all tasks with their current status.
 
 **Returns:** Task statistics and summaries
 
+## MCP Prompts
+
+The server provides MCP prompts that can be used to execute complex problem-solving strategies:
+
+### `/solve` Prompt
+
+Solves complicated problems by running multiple state-of-the-art LLMs in parallel and implementing their solutions.
+
+**Arguments:**
+- `problem` (required): The problem to solve
+- `context` (optional): Additional context about the problem  
+- `files` (optional): Comma-separated list of file paths relevant to the problem
+
+**Strategy:**
+1. Starts tasks with multiple models (grok-4, gemini-2.5-pro, o3, reasoning class)
+2. All tasks run in parallel to diagnose and propose solutions
+3. Tasks can create test files but cannot edit existing files
+4. First successful solution is implemented
+5. If a solution fails, retry with feedback to the same model
+6. Continues until problem is resolved
+
 ## Example Workflow
 
 ```javascript

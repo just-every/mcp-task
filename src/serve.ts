@@ -6,7 +6,10 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import {
     CallToolRequestSchema,
     ListToolsRequestSchema,
+    ListPromptsRequestSchema,
+    GetPromptRequestSchema,
     type Tool,
+    type Prompt,
 } from '@modelcontextprotocol/sdk/types.js';
 import { logger } from './utils/logger.js';
 import { TaskManager } from './utils/task-manager.js';
@@ -89,6 +92,7 @@ const server = new Server(
     {
         capabilities: {
             tools: {},
+            prompts: {},
         },
     }
 );
@@ -147,7 +151,8 @@ const RUN_TASK_TOOL: Tool = {
             read_only: {
                 type: 'boolean',
                 description:
-                    'Optional: When true, excludes tools that can modify files, execute commands, or make changes. Only allows read/search/analysis tools. Defaults to false.',
+                    'Optional: When true, excludes tools that can modify files, execute commands, or make changes. Only allows read/search/analysis tools.',
+                default: false,
             },
         },
         required: ['task'],
@@ -249,6 +254,77 @@ const LIST_TASKS_TOOL: Tool = {
         required: [], // All parameters are optional
     },
 };
+
+// Prompt definitions
+const SOLVE_PROMPT: Prompt = {
+    name: 'solve',
+    description:
+        'Solve a complicated problem with multiple state-of-the-art LLMs',
+    arguments: [
+        {
+            name: 'problem',
+            description: 'The problem to solve',
+            required: true,
+        },
+    ],
+};
+
+// Handle prompt listing
+server.setRequestHandler(ListPromptsRequestSchema, async () => {
+    if (process.env.MCP_MODE !== 'true') {
+        logger.debug('Received ListPrompts request');
+    }
+    return {
+        prompts: [SOLVE_PROMPT],
+    };
+});
+
+// Handle prompt retrieval
+server.setRequestHandler(GetPromptRequestSchema, async request => {
+    if (process.env.MCP_MODE !== 'true') {
+        logger.debug('Received GetPrompt request:', request.params.name);
+    }
+
+    const { name, arguments: args } = request.params;
+
+    if (name === 'solve') {
+        const problem =
+            args?.problem ||
+            'Figure out what problem needs solving from the recent conversation';
+
+        return {
+            description: 'Multi-model problem solving strategy',
+            messages: [
+                {
+                    role: 'user',
+                    content: {
+                        type: 'text',
+                        text: `Solve a complicated problem by starting multiple tasks with state of the art LLMs.
+
+Use the task MCP to start run_task in READ ONLY mode for each of these models:
+1. grok-4
+2. gemini-2.5-pro
+3. o3
+4. reasoning (a class which rotates through models)
+
+Provide the same instructions for each task. Explain the problem and context.
+Tell the task to diagnose the problem and come up with a solution. Use READ ONLY mode so that it does not edit any files, but can read any other files if needed. It should return its proposed solution, not implement it.
+For each task provide ALL relevant files.
+
+Start all tasks at once and then periodically check their status using list_tasks. You can drill down into individual tasks with check_task_status (or get_task_result when complete).
+
+As soon as one completes you can try implementing the solution it proposes. If it works, cancel all other tasks. If it fails, start a new task with the same model/class and explain the problem, its suggested solution and why it didn't work. Check for any other completed tasks and if they have a different solution try that. Try to keep multiple tasks running in the background until the problem is resolved.
+
+Problem to solve:
+${problem}`,
+                    },
+                },
+            ],
+        };
+    }
+
+    throw new Error(`Unknown prompt: ${name}`);
+});
 
 // Handle tool listing
 server.setRequestHandler(ListToolsRequestSchema, async () => {
@@ -597,13 +673,33 @@ server.setRequestHandler(CallToolRequestSchema, async request => {
             readOnly: args.read_only,
         });
 
+        // Get current working directory and file list
+        const cwd = process.cwd();
+        const { readdirSync, statSync } = await import('fs');
+        const { join } = await import('path');
+        const files = readdirSync(cwd);
+        const fileList = files
+            .map(f => {
+                const isDirectory = statSync(join(cwd, f)).isDirectory();
+                return `\t${f}${isDirectory ? '/' : ''}`;
+            })
+            .join('\n');
+
         // Create agent with tools
         const agent = new AgentClass({
             name: 'TaskRunner',
             modelClass: modelClass as any,
             model: modelName,
-            instructions:
-                'You are a helpful AI assistant that can complete complex tasks.',
+            instructions: `You are a helpful AI assistant that can complete complex tasks.
+
+You are working in the ${cwd} directory.
+
+The current directory contains:
+${fileList}
+
+You have a range of tools available to you to explore your environment and solve problems.
+
+${args.read_only ? 'You are in READ ONLY mode. You can read files, search the web, and analyze data, but you cannot modify any files or execute commands that change the system state.' : 'You can read files, search the web, and analyze data, and you can also modify files or execute commands that change the system state.'}`,
             tools: allTools,
         });
 
