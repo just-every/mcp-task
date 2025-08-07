@@ -48,10 +48,10 @@
   "homepage": "https://github.com/just-every/mcp-task#readme",
   "license": "MIT",
   "dependencies": {
-    "@just-every/ensemble": "^0.2.151",
+    "@just-every/ensemble": "^0.2.154",
     "@just-every/search": "^1.0.10",
-    "@just-every/task": "^0.2.40",
-    "@modelcontextprotocol/sdk": "^1.12.3",
+    "@just-every/task": "^0.2.42",
+    "@modelcontextprotocol/sdk": "^1.17.2",
     "@types/glob": "^8.1.0",
     "commander": "^14.0.0",
     "dotenv": "^17.2.1",

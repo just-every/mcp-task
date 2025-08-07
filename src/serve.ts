@@ -374,7 +374,7 @@ server.setRequestHandler(GetPromptRequestSchema, async request => {
                         text: `Solve a complicated problem by starting multiple tasks with state of the art LLMs.
 
 Use the task MCP to start a batch of tasks using run_task with an array of models:
-- models: ['grok-4', 'gemini-2.5-pro', 'o3', 'reasoning']
+- models: ['gpt-5', 'gemini-2.5-pro', 'grok-4', 'reasoning']
 - read_only: true (so tasks don't edit files but can read them)
 
 This will start all tasks at once and return a batch_id.
