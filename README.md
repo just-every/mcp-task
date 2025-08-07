@@ -62,11 +62,15 @@ Start a long-running AI task asynchronously. Returns a task ID immediately.
 
 **Parameters:**
 - `task` (required): The task prompt - what to perform
-- `model` (optional): Model class or specific model name
+- `model` (optional): Model class or specific model name, or array of models for batch execution
 - `context` (optional): Background context for the task
 - `output` (optional): The desired output/success state
+- `files` (optional): Array of file paths to include in the task context
+- `read_only` (optional): When true, task runs in read-only mode (default: false)
 
-**Returns:** Task ID for monitoring progress
+**Returns:** 
+- Single task: `{ task_id, status, message }`
+- Batch execution: `{ batch_id, task_ids[], status, message }`
 
 ### `check_task_status`
 
@@ -88,12 +92,25 @@ Get the final result of a completed task.
 
 ### `cancel_task`
 
-Cancel a pending or running task.
+Cancel a pending or running task, or all tasks in a batch.
 
 **Parameters:**
-- `task_id` (required): The task ID to cancel
+- `task_id` (optional): The task ID to cancel
+- `batch_id` (optional): Cancel all tasks with this batch ID
 
-**Returns:** Cancellation status
+**Returns:** Cancellation status and count of cancelled tasks
+
+### `wait_for_task`
+
+Wait for a task or any task in a batch to complete, fail, or be cancelled.
+
+**Parameters:**
+- `task_id` (optional): Wait for this specific task to complete
+- `batch_id` (optional): Wait for any task in this batch to complete
+- `timeout_seconds` (optional): Maximum seconds to wait (default: 300, max: 600)
+- `return_all` (optional): For batch_id, return all completed tasks instead of just the first (default: false)
+
+**Returns:** Task completion details with wait time, or timeout status
 
 ### `list_tasks`
 
@@ -101,8 +118,10 @@ List all tasks with their current status.
 
 **Parameters:**
 - `status_filter` (optional): Filter by status (pending, running, completed, failed, cancelled)
+- `batch_id` (optional): Filter tasks by batch ID
+- `recent_only` (optional): Only show tasks from the last 2 hours (default: false)
 
-**Returns:** Task statistics and summaries
+**Returns:** Task statistics and summaries with applied filters
 
 ## MCP Prompts
 
@@ -172,9 +191,19 @@ const resultResponse = await callTool('get_task_result', {
 
 ## Integrated Tools
 
-Tasks have access to:
+Task agents have access to a lightweight version of the tools available to Claude, optimized for autonomous task execution:
+
 - **Web Search**: Search the web for information using `@just-every/search`
-- **Command Execution**: Run shell commands via the `run_command` tool
+- **File Operations**: Read and write files, with optional read-only mode
+- **Command Execution**: Run shell commands (disabled in read-only mode)
+- **Code Analysis**: Search and analyze codebases
+
+### Read-Only Mode
+
+When `read_only: true` is specified:
+- Tasks can read files, search the web, and analyze data
+- Tasks cannot modify files or execute commands that change system state
+- Ideal for diagnostic tasks, code review, and solution planning
 
 ## API Keys
 
@@ -189,7 +218,6 @@ GOOGLE_API_KEY=your-google-key     # For Gemini models
 
 # Search Providers (optional, for web_search tool)
 BRAVE_API_KEY=your-brave-key
-SERPER_API_KEY=your-serper-key
 PERPLEXITY_API_KEY=your-perplexity-key
 OPENROUTER_API_KEY=your-openrouter-key
 ```
@@ -201,7 +229,6 @@ OPENROUTER_API_KEY=your-openrouter-key
 - **xAI (Grok)**: [x.ai](https://x.ai/)
 - **Google (Gemini)**: [makersuite.google.com](https://makersuite.google.com/)
 - **Brave Search**: [brave.com/search/api](https://brave.com/search/api/)
-- **Serper**: [serper.dev](https://serper.dev/)
 - **Perplexity**: [perplexity.ai](https://perplexity.ai/)
 - **OpenRouter**: [openrouter.ai](https://openrouter.ai/)
 
