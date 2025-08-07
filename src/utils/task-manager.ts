@@ -13,6 +13,7 @@ export interface TaskInfo {
     status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
     model?: string;
     modelClass?: string;
+    batchId?: string; // ID for grouping related tasks
     context?: string;
     task: string;
     output?: string; // Final output from task_complete or error from task_fatal_error
@@ -80,6 +81,7 @@ export class TaskManager {
         id?: string;
         model?: string;
         modelClass?: string;
+        batchId?: string;
         context?: string;
         task: string;
         output?: string;
@@ -92,6 +94,7 @@ export class TaskManager {
             status: 'pending',
             model: params.model,
             modelClass: params.modelClass,
+            batchId: params.batchId,
             context: params.context,
             task: params.task,
             output: params.output,

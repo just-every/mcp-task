@@ -124,9 +124,22 @@ const RUN_TASK_TOOL: Tool = {
         type: 'object',
         properties: {
             model: {
-                type: 'string',
-                description: `Optional: Model class OR specific model name. Classes: ${MODEL_CLASSES.join(', ')}. Popular models: ${POPULAR_MODELS.join(', ')}. Defaults to 'standard' if not specified.`,
-                enum: [...MODEL_CLASSES, ...POPULAR_MODELS],
+                oneOf: [
+                    {
+                        type: 'string',
+                        description: `Model class OR specific model name. Classes: ${MODEL_CLASSES.join(', ')}. Popular models: ${POPULAR_MODELS.join(', ')}.`,
+                        enum: [...MODEL_CLASSES, ...POPULAR_MODELS],
+                    },
+                    {
+                        type: 'array',
+                        description: `Array of model classes or specific model names for batch execution`,
+                        items: {
+                            type: 'string',
+                            enum: [...MODEL_CLASSES, ...POPULAR_MODELS],
+                        },
+                    },
+                ],
+                description: `Optional: Single model OR array of models for batch execution. Defaults to 'standard' if not specified.`,
             },
             task: {
                 type: 'string',
@@ -206,7 +219,7 @@ const GET_TASK_RESULT_TOOL: Tool = {
 
 const CANCEL_TASK_TOOL: Tool = {
     name: 'cancel_task',
-    description: 'Cancel a pending or running task.',
+    description: 'Cancel a pending or running task, or all tasks in a batch.',
     annotations: {
         title: 'Cancel Task',
         readOnlyHint: false, // Modifies task state
@@ -219,10 +232,58 @@ const CANCEL_TASK_TOOL: Tool = {
         properties: {
             task_id: {
                 type: 'string',
-                description: 'The task ID to cancel',
+                description:
+                    'The task ID to cancel (required if batch_id not provided)',
+            },
+            batch_id: {
+                type: 'string',
+                description:
+                    'Cancel all tasks with this batch ID (required if task_id not provided)',
             },
         },
-        required: ['task_id'],
+        required: [], // At least one must be provided, validated in handler
+    },
+};
+
+const WAIT_FOR_TASK_TOOL: Tool = {
+    name: 'wait_for_task',
+    description:
+        'Wait for a task or any task in a batch to complete, fail, or be cancelled.',
+    annotations: {
+        title: 'Wait For Task Completion',
+        readOnlyHint: true, // Only reads task status
+        destructiveHint: false, // Doesn't modify or destroy data
+        idempotentHint: true, // Waiting multiple times is safe
+        openWorldHint: false, // Only queries local task state
+    },
+    inputSchema: {
+        type: 'object',
+        properties: {
+            task_id: {
+                type: 'string',
+                description:
+                    'Wait for this specific task to complete (required if batch_id not provided)',
+            },
+            batch_id: {
+                type: 'string',
+                description:
+                    'Wait for any task in this batch to complete (required if task_id not provided)',
+            },
+            timeout_seconds: {
+                type: 'number',
+                description:
+                    'Maximum seconds to wait before timing out (default: 300, max: 600)',
+                default: 300,
+                maximum: 600,
+            },
+            return_all: {
+                type: 'boolean',
+                description:
+                    'For batch_id: return all completed tasks instead of just the first one (default: false)',
+                default: false,
+            },
+        },
+        required: [], // At least one must be provided, validated in handler
     },
 };
 
@@ -249,6 +310,17 @@ const LIST_TASKS_TOOL: Tool = {
                     'failed',
                     'cancelled',
                 ],
+            },
+            batch_id: {
+                type: 'string',
+                description:
+                    'Optional: Filter tasks by batch ID to only show tasks from a specific batch',
+            },
+            recent_only: {
+                type: 'boolean',
+                description:
+                    'Optional: Only show tasks from the last 2 hours (default: false)',
+                default: false,
             },
         },
         required: [], // All parameters are optional
@@ -301,19 +373,17 @@ server.setRequestHandler(GetPromptRequestSchema, async request => {
                         type: 'text',
                         text: `Solve a complicated problem by starting multiple tasks with state of the art LLMs.
 
-Use the task MCP to start run_task in READ ONLY mode for each of these models:
-1. grok-4
-2. gemini-2.5-pro
-3. o3
-4. reasoning (a class which rotates through models)
+Use the task MCP to start a batch of tasks using run_task with an array of models:
+- models: ['grok-4', 'gemini-2.5-pro', 'o3', 'reasoning']
+- read_only: true (so tasks don't edit files but can read them)
 
-Provide the same instructions for each task. Explain the problem and context.
-Tell the task to diagnose the problem and come up with a solution. Use READ ONLY mode so that it does not edit any files, but can read any other files if needed. It should return its proposed solution, not implement it.
-For each task provide ALL relevant files.
+This will start all tasks at once and return a batch_id.
 
-Start all tasks at once and then periodically check their status using list_tasks. You can drill down into individual tasks with check_task_status (or get_task_result when complete).
+To monitor progress, you have two options:
+1. Use wait_for_task with the batch_id to block until the first task completes (efficient)
+2. Use list_tasks with the batch_id to poll and check status manually
 
-As soon as one completes you can try implementing the solution it proposes. If it works, cancel all other tasks. If it fails, start a new task with the same model/class and explain the problem, its suggested solution and why it didn't work. Check for any other completed tasks and if they have a different solution try that. Try to keep multiple tasks running in the background until the problem is resolved.
+As soon as one completes you can try implementing the solution it proposes. If it works, use cancel_task with the batch_id to cancel all remaining tasks. If it fails, start a new task with the same model/class and explain the problem, its suggested solution and why it didn't work. Check for any other completed tasks and if they have a different solution try that. Try to keep multiple tasks running in the background until the problem is resolved.
 
 Problem to solve:
 ${problem}`,
@@ -337,6 +407,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             CHECK_TASK_STATUS_TOOL,
             GET_TASK_RESULT_TOOL,
             CANCEL_TASK_TOOL,
+            WAIT_FOR_TASK_TOOL,
             LIST_TASKS_TOOL,
         ],
     };
@@ -460,7 +531,7 @@ server.setRequestHandler(CallToolRequestSchema, async request => {
                                     lastActivity: activity.lastActivity,
                                     check_after:
                                         task.status === 'running'
-                                            ? recommendedCheckAfter
+                                            ? `Please wait ${recommendedCheckAfter} seconds before checking this task again`
                                             : null,
                                     warning: warningMessage,
                                     errorCount: task.errorCount,
@@ -505,26 +576,344 @@ server.setRequestHandler(CallToolRequestSchema, async request => {
             }
 
             case 'cancel_task': {
-                if (!args.task_id) {
-                    throw new Error('task_id is required');
+                // Validate that at least one parameter is provided
+                if (!args.task_id && !args.batch_id) {
+                    throw new Error('Either task_id or batch_id is required');
                 }
 
-                const cancelled = taskManager.cancelTask(args.task_id);
+                if (args.task_id && args.batch_id) {
+                    throw new Error(
+                        'Provide either task_id or batch_id, not both'
+                    );
+                }
 
-                return {
-                    content: [
-                        {
-                            type: 'text',
-                            text: cancelled
-                                ? `Task ${args.task_id} cancelled successfully`
-                                : `Could not cancel task ${args.task_id} (may be already completed)`,
-                        },
-                    ],
+                // Handle single task cancellation
+                if (args.task_id) {
+                    const cancelled = taskManager.cancelTask(args.task_id);
+
+                    return {
+                        content: [
+                            {
+                                type: 'text',
+                                text: cancelled
+                                    ? `Task ${args.task_id} cancelled successfully`
+                                    : `Could not cancel task ${args.task_id} (may be already completed)`,
+                            },
+                        ],
+                    };
+                }
+
+                // Handle batch cancellation
+                if (args.batch_id) {
+                    const allTasks = taskManager.getAllTasks();
+                    const batchTasks = allTasks.filter(
+                        t => t.batchId === args.batch_id
+                    );
+
+                    if (batchTasks.length === 0) {
+                        return {
+                            content: [
+                                {
+                                    type: 'text',
+                                    text: `No tasks found with batch_id: ${args.batch_id}`,
+                                },
+                            ],
+                        };
+                    }
+
+                    let cancelledCount = 0;
+                    let alreadyCompleteCount = 0;
+
+                    for (const task of batchTasks) {
+                        if (taskManager.cancelTask(task.id)) {
+                            cancelledCount++;
+                        } else if (
+                            task.status === 'completed' ||
+                            task.status === 'failed' ||
+                            task.status === 'cancelled'
+                        ) {
+                            alreadyCompleteCount++;
+                        }
+                    }
+
+                    return {
+                        content: [
+                            {
+                                type: 'text',
+                                text: JSON.stringify(
+                                    {
+                                        batch_id: args.batch_id,
+                                        total_tasks: batchTasks.length,
+                                        cancelled: cancelledCount,
+                                        already_complete: alreadyCompleteCount,
+                                        message: `Cancelled ${cancelledCount} tasks from batch ${args.batch_id}`,
+                                    },
+                                    null,
+                                    2
+                                ),
+                            },
+                        ],
+                    };
+                }
+
+                // Should never reach here due to validation above
+                throw new Error('Invalid cancel_task parameters');
+            }
+
+            case 'wait_for_task': {
+                // Validate that at least one parameter is provided
+                if (!args.task_id && !args.batch_id) {
+                    throw new Error('Either task_id or batch_id is required');
+                }
+
+                if (args.task_id && args.batch_id) {
+                    throw new Error(
+                        'Provide either task_id or batch_id, not both'
+                    );
+                }
+
+                const timeoutSeconds = Math.min(
+                    args.timeout_seconds || 300,
+                    600
+                );
+                const returnAll = args.return_all || false;
+                const startTime = Date.now();
+                const timeoutMs = timeoutSeconds * 1000;
+                const pollIntervalMs = 1000; // Poll every second
+
+                // Helper function to check if a task is complete
+                const isTaskComplete = (task: any) => {
+                    return (
+                        task.status === 'completed' ||
+                        task.status === 'failed' ||
+                        task.status === 'cancelled'
+                    );
                 };
+
+                // Wait for single task
+                if (args.task_id) {
+                    while (Date.now() - startTime < timeoutMs) {
+                        const task = taskManager.getTask(args.task_id);
+
+                        if (!task) {
+                            throw new Error(`Task ${args.task_id} not found`);
+                        }
+
+                        if (isTaskComplete(task)) {
+                            return {
+                                content: [
+                                    {
+                                        type: 'text',
+                                        text: JSON.stringify(
+                                            {
+                                                task_id: task.id,
+                                                status: task.status,
+                                                output: task.output,
+                                                completed_at: task.completedAt,
+                                                wait_time_seconds: Math.round(
+                                                    (Date.now() - startTime) /
+                                                        1000
+                                                ),
+                                            },
+                                            null,
+                                            2
+                                        ),
+                                    },
+                                ],
+                            };
+                        }
+
+                        // Wait before next check
+                        await new Promise(resolve =>
+                            setTimeout(resolve, pollIntervalMs)
+                        );
+                    }
+
+                    // Timeout reached
+                    const task = taskManager.getTask(args.task_id);
+                    return {
+                        content: [
+                            {
+                                type: 'text',
+                                text: JSON.stringify(
+                                    {
+                                        task_id: args.task_id,
+                                        status: task?.status || 'unknown',
+                                        timeout: true,
+                                        message: `Timeout after ${timeoutSeconds} seconds waiting for task ${args.task_id}`,
+                                    },
+                                    null,
+                                    2
+                                ),
+                            },
+                        ],
+                    };
+                }
+
+                // Wait for batch tasks
+                if (args.batch_id) {
+                    const completedTasks: any[] = [];
+
+                    while (Date.now() - startTime < timeoutMs) {
+                        const allTasks = taskManager.getAllTasks();
+                        const batchTasks = allTasks.filter(
+                            t => t.batchId === args.batch_id
+                        );
+
+                        if (batchTasks.length === 0) {
+                            throw new Error(
+                                `No tasks found with batch_id: ${args.batch_id}`
+                            );
+                        }
+
+                        // Check for completed tasks
+                        const newlyCompleted = batchTasks.filter(
+                            t =>
+                                isTaskComplete(t) &&
+                                !completedTasks.find(ct => ct.id === t.id)
+                        );
+
+                        completedTasks.push(...newlyCompleted);
+
+                        // If we want all tasks, check if all are complete
+                        if (returnAll) {
+                            const allComplete =
+                                batchTasks.every(isTaskComplete);
+                            if (allComplete) {
+                                return {
+                                    content: [
+                                        {
+                                            type: 'text',
+                                            text: JSON.stringify(
+                                                {
+                                                    batch_id: args.batch_id,
+                                                    all_complete: true,
+                                                    tasks: batchTasks.map(
+                                                        t => ({
+                                                            id: t.id,
+                                                            status: t.status,
+                                                            output: t.output,
+                                                            completed_at:
+                                                                t.completedAt,
+                                                        })
+                                                    ),
+                                                    wait_time_seconds:
+                                                        Math.round(
+                                                            (Date.now() -
+                                                                startTime) /
+                                                                1000
+                                                        ),
+                                                },
+                                                null,
+                                                2
+                                            ),
+                                        },
+                                    ],
+                                };
+                            }
+                        } else {
+                            // Return first completed task
+                            if (completedTasks.length > 0) {
+                                const firstCompleted = completedTasks[0];
+                                return {
+                                    content: [
+                                        {
+                                            type: 'text',
+                                            text: JSON.stringify(
+                                                {
+                                                    batch_id: args.batch_id,
+                                                    first_completed: true,
+                                                    task_id: firstCompleted.id,
+                                                    status: firstCompleted.status,
+                                                    output: firstCompleted.output,
+                                                    completed_at:
+                                                        firstCompleted.completedAt,
+                                                    remaining_tasks:
+                                                        batchTasks.filter(
+                                                            t =>
+                                                                !isTaskComplete(
+                                                                    t
+                                                                )
+                                                        ).length,
+                                                    wait_time_seconds:
+                                                        Math.round(
+                                                            (Date.now() -
+                                                                startTime) /
+                                                                1000
+                                                        ),
+                                                },
+                                                null,
+                                                2
+                                            ),
+                                        },
+                                    ],
+                                };
+                            }
+                        }
+
+                        // Wait before next check
+                        await new Promise(resolve =>
+                            setTimeout(resolve, pollIntervalMs)
+                        );
+                    }
+
+                    // Timeout reached
+                    const allTasks = taskManager.getAllTasks();
+                    const batchTasks = allTasks.filter(
+                        t => t.batchId === args.batch_id
+                    );
+                    const runningCount = batchTasks.filter(
+                        t => t.status === 'running'
+                    ).length;
+                    const pendingCount = batchTasks.filter(
+                        t => t.status === 'pending'
+                    ).length;
+
+                    return {
+                        content: [
+                            {
+                                type: 'text',
+                                text: JSON.stringify(
+                                    {
+                                        batch_id: args.batch_id,
+                                        timeout: true,
+                                        message: `Timeout after ${timeoutSeconds} seconds`,
+                                        completed_tasks: completedTasks.length,
+                                        running_tasks: runningCount,
+                                        pending_tasks: pendingCount,
+                                        total_tasks: batchTasks.length,
+                                    },
+                                    null,
+                                    2
+                                ),
+                            },
+                        ],
+                    };
+                }
+
+                // Should never reach here
+                throw new Error('Invalid wait_for_task parameters');
             }
 
             case 'list_tasks': {
-                const allTasks = taskManager.getAllTasks();
+                let allTasks = taskManager.getAllTasks();
+
+                // Apply recent_only filter (last 2 hours)
+                if (args.recent_only) {
+                    const twoHoursAgo = Date.now() - 2 * 60 * 60 * 1000;
+                    allTasks = allTasks.filter(
+                        t => t.createdAt.getTime() > twoHoursAgo
+                    );
+                }
+
+                // Apply batch_id filter
+                if (args.batch_id) {
+                    allTasks = allTasks.filter(
+                        t => t.batchId === args.batch_id
+                    );
+                }
+
+                // Apply status filter
                 const filteredTasks = args.status_filter
                     ? allTasks.filter(t => t.status === args.status_filter)
                     : allTasks;
@@ -534,12 +923,28 @@ server.setRequestHandler(CallToolRequestSchema, async request => {
                     status: t.status,
                     task: t.task.substring(0, 100),
                     model: t.model || t.modelClass,
+                    batchId: t.batchId,
                     readOnly: t.readOnly,
                     createdAt: t.createdAt,
                     completedAt: t.completedAt,
                 }));
 
-                const stats = taskManager.getStats();
+                // Calculate stats for filtered tasks
+                const stats = {
+                    total: filteredTasks.length,
+                    pending: filteredTasks.filter(t => t.status === 'pending')
+                        .length,
+                    running: filteredTasks.filter(t => t.status === 'running')
+                        .length,
+                    completed: filteredTasks.filter(
+                        t => t.status === 'completed'
+                    ).length,
+                    failed: filteredTasks.filter(t => t.status === 'failed')
+                        .length,
+                    cancelled: filteredTasks.filter(
+                        t => t.status === 'cancelled'
+                    ).length,
+                };
 
                 return {
                     content: [
@@ -549,6 +954,11 @@ server.setRequestHandler(CallToolRequestSchema, async request => {
                                 {
                                     stats,
                                     tasks: taskSummaries,
+                                    filters_applied: {
+                                        batch_id: args.batch_id || null,
+                                        status: args.status_filter || null,
+                                        recent_only: args.recent_only || false,
+                                    },
                                 },
                                 null,
                                 2
@@ -579,10 +989,22 @@ server.setRequestHandler(CallToolRequestSchema, async request => {
             throw new Error('Task parameter is required and must be a string');
         }
 
+        // Check if batch execution (array of models)
+        const isBatch = Array.isArray(args.model);
+        const models = isBatch ? args.model : [args.model || 'standard'];
+
+        // Generate batch ID for grouped tasks
+        const batchId = isBatch
+            ? `batch-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+            : undefined;
+
         if (process.env.MCP_MODE !== 'true') {
-            logger.info(`Processing task request`);
+            logger.info(
+                `Processing ${isBatch ? 'batch' : 'single'} task request`
+            );
             logger.debug('Task parameters:', {
-                model: args.model,
+                models: models,
+                batchId: batchId,
                 context: args.context,
                 task: args.task,
                 output: args.output,
@@ -622,57 +1044,6 @@ server.setRequestHandler(CallToolRequestSchema, async request => {
         // Note: Search tools are generally read-only (search, fetch, etc.)
         const allTools = [...searchTools, ...customTools];
 
-        // Determine model configuration
-        let modelClass: string | undefined;
-        let modelName: string | undefined;
-
-        if (args.model) {
-            // Check if it's a model class
-            if (MODEL_CLASSES.includes(args.model.toLowerCase())) {
-                modelClass = args.model.toLowerCase();
-            } else {
-                // It's a specific model name
-                modelName = args.model;
-            }
-        } else {
-            // Default to standard class if no model specified
-            modelClass = 'standard';
-        }
-
-        // Generate task ID from model and task words
-        const modelPart = (modelName || modelClass || 'standard')
-            .toLowerCase()
-            .replace(/[^a-z0-9]/g, '');
-        const taskWords = args.task
-            .toLowerCase()
-            .replace(/[^a-z0-9\s]/g, '')
-            .split(/\s+/)
-            .filter((word: string) => word.length > 2)
-            .slice(0, 3)
-            .join('-');
-
-        const baseTaskId = `${modelPart}-${taskWords}`;
-
-        // Ensure uniqueness by adding a suffix if needed
-        let taskId = baseTaskId;
-        let suffix = 1;
-        while (taskManager.getTask(taskId)) {
-            taskId = `${baseTaskId}-${suffix}`;
-            suffix++;
-        }
-
-        // Create task with custom ID
-        taskManager.createTask({
-            id: taskId,
-            model: modelName,
-            modelClass: modelClass,
-            context: args.context,
-            task: args.task,
-            output: args.output,
-            files: args.files,
-            readOnly: args.read_only,
-        });
-
         // Get current working directory and file list
         const cwd = process.cwd();
         const { readdirSync, statSync } = await import('fs');
@@ -685,12 +1056,68 @@ server.setRequestHandler(CallToolRequestSchema, async request => {
             })
             .join('\n');
 
-        // Create agent with tools
-        const agent = new AgentClass({
-            name: 'TaskRunner',
-            modelClass: modelClass as any,
-            model: modelName,
-            instructions: `You are a helpful AI assistant that can complete complex tasks.
+        // Create and execute tasks for each model
+        const taskIds: string[] = [];
+
+        for (const model of models) {
+            // Determine model configuration for this specific model
+            let modelClass: string | undefined;
+            let modelName: string | undefined;
+
+            if (model) {
+                // Check if it's a model class
+                if (MODEL_CLASSES.includes(model.toLowerCase())) {
+                    modelClass = model.toLowerCase();
+                } else {
+                    // It's a specific model name
+                    modelName = model;
+                }
+            } else {
+                // Default to standard class if no model specified
+                modelClass = 'standard';
+            }
+
+            // Generate task ID from model and task words
+            const modelPart = (modelName || modelClass || 'standard')
+                .toLowerCase()
+                .replace(/[^a-z0-9]/g, '');
+            const taskWords = args.task
+                .toLowerCase()
+                .replace(/[^a-z0-9\s]/g, '')
+                .split(/\s+/)
+                .filter((word: string) => word.length > 2)
+                .slice(0, 3)
+                .join('-');
+
+            const baseTaskId = `${modelPart}-${taskWords}`;
+
+            // Ensure uniqueness by adding a suffix if needed
+            let taskId = baseTaskId;
+            let suffix = 1;
+            while (taskManager.getTask(taskId)) {
+                taskId = `${baseTaskId}-${suffix}`;
+                suffix++;
+            }
+
+            // Create task with custom ID and batch ID
+            taskManager.createTask({
+                id: taskId,
+                model: modelName,
+                modelClass: modelClass,
+                batchId: batchId,
+                context: args.context,
+                task: args.task,
+                output: args.output,
+                files: args.files,
+                readOnly: args.read_only,
+            });
+
+            // Create agent with tools
+            const agent = new AgentClass({
+                name: 'TaskRunner',
+                modelClass: modelClass as any,
+                model: modelName,
+                instructions: `You are a helpful AI assistant that can complete complex tasks.
 
 You are working in the ${cwd} directory.
 
@@ -700,47 +1127,70 @@ ${fileList}
 You have a range of tools available to you to explore your environment and solve problems.
 
 ${args.read_only ? 'You are in READ ONLY mode. You can read files, search the web, and analyze data, but you cannot modify any files or execute commands that change the system state.' : 'You can read files, search the web, and analyze data, and you can also modify files or execute commands that change the system state.'}`,
-            tools: allTools,
-        });
+                tools: allTools,
+            });
 
-        // Start task execution in background (non-blocking)
-        taskManager.executeTask(taskId, agent, fullPrompt).catch(error => {
-            logger.error(`Background task ${taskId} failed:`, error);
+            // Start task execution in background (non-blocking)
+            taskManager.executeTask(taskId, agent, fullPrompt).catch(error => {
+                logger.error(`Background task ${taskId} failed:`, error);
 
-            // Ensure task is marked as failed
-            const task = taskManager.getTask(taskId);
-            if (task && task.status === 'running') {
-                logger.error(
-                    `Marking stuck task ${taskId} as failed after error`
-                );
-                task.status = 'failed';
-                task.output = `ERROR: Task execution failed: ${error.message}`;
-                task.completedAt = new Date();
+                // Ensure task is marked as failed
+                const task = taskManager.getTask(taskId);
+                if (task && task.status === 'running') {
+                    logger.error(
+                        `Marking stuck task ${taskId} as failed after error`
+                    );
+                    task.status = 'failed';
+                    task.output = `ERROR: Task execution failed: ${error.message}`;
+                    task.completedAt = new Date();
+                }
+            });
+
+            taskIds.push(taskId);
+
+            if (process.env.MCP_MODE !== 'true') {
+                logger.info(`Task ${taskId} queued for execution`);
             }
-        });
-
-        if (process.env.MCP_MODE !== 'true') {
-            logger.info(`Task ${taskId} queued for execution`);
         }
 
-        // Return task ID immediately
-        return {
-            content: [
-                {
-                    type: 'text',
-                    text: JSON.stringify(
-                        {
-                            task_id: taskId,
-                            status: 'pending',
-                            message:
-                                'Task queued for execution. Use check_task_status to monitor progress.',
-                        },
-                        null,
-                        2
-                    ),
-                },
-            ],
-        };
+        // Return appropriate response based on single vs batch
+        if (isBatch) {
+            return {
+                content: [
+                    {
+                        type: 'text',
+                        text: JSON.stringify(
+                            {
+                                batch_id: batchId,
+                                task_ids: taskIds,
+                                status: 'pending',
+                                message: `${taskIds.length} tasks queued for execution. Use list_tasks with batch_id to monitor progress.`,
+                            },
+                            null,
+                            2
+                        ),
+                    },
+                ],
+            };
+        } else {
+            return {
+                content: [
+                    {
+                        type: 'text',
+                        text: JSON.stringify(
+                            {
+                                task_id: taskIds[0],
+                                status: 'pending',
+                                message:
+                                    'Task queued for execution. Use check_task_status to monitor progress.',
+                            },
+                            null,
+                            2
+                        ),
+                    },
+                ],
+            };
+        }
     } catch (error: any) {
         logger.error('Error executing task:', error.message);
         logger.debug('Error stack:', error.stack);
