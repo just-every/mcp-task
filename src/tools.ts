@@ -509,3 +509,13 @@ export const getAllTools = () => [
     multiEditTool,
     webFetchTool,
 ];
+
+// Export read-only tools (tools that don't modify state)
+export const getReadOnlyTools = () => [
+    // Read/search operations only
+    readFileTool,
+    globTool,
+    grepTool,
+    lsTool,
+    webFetchTool,
+];

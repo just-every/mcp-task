@@ -17,6 +17,7 @@ export interface TaskInfo {
     task: string;
     output?: string; // Final output from task_complete or error from task_fatal_error
     files?: string[]; // File paths included in the task
+    readOnly?: boolean; // Whether the task is running in read-only mode
     createdAt: Date;
     startedAt?: Date;
     completedAt?: Date;
@@ -76,14 +77,16 @@ export class TaskManager {
      * Create a new task and return its ID
      */
     public createTask(params: {
+        id?: string;
         model?: string;
         modelClass?: string;
         context?: string;
         task: string;
         output?: string;
         files?: string[];
+        readOnly?: boolean;
     }): string {
-        const taskId = uuid();
+        const taskId = params.id || uuid();
         const taskInfo: TaskInfo = {
             id: taskId,
             status: 'pending',
@@ -93,6 +96,7 @@ export class TaskManager {
             task: params.task,
             output: params.output,
             files: params.files,
+            readOnly: params.readOnly,
             createdAt: new Date(),
             messages: [],
             requestCount: 0,

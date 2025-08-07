@@ -16,7 +16,7 @@ import { getSearchTools } from '@just-every/search';
 // exec and promisify no longer needed - using bash tool from tools.ts instead
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import { getAllTools } from './tools.js';
+import { getAllTools, getReadOnlyTools } from './tools.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -119,14 +119,14 @@ const RUN_TASK_TOOL: Tool = {
     inputSchema: {
         type: 'object',
         properties: {
-            task: {
-                type: 'string',
-                description: 'The task prompt - what to perform (required)',
-            },
             model: {
                 type: 'string',
                 description: `Optional: Model class OR specific model name. Classes: ${MODEL_CLASSES.join(', ')}. Popular models: ${POPULAR_MODELS.join(', ')}. Defaults to 'standard' if not specified.`,
                 enum: [...MODEL_CLASSES, ...POPULAR_MODELS],
+            },
+            task: {
+                type: 'string',
+                description: 'The task prompt - what to perform (required)',
             },
             context: {
                 type: 'string',
@@ -143,6 +143,11 @@ const RUN_TASK_TOOL: Tool = {
                 items: {
                     type: 'string',
                 },
+            },
+            read_only: {
+                type: 'boolean',
+                description:
+                    'Optional: When true, excludes tools that can modify files, execute commands, or make changes. Only allows read/search/analysis tools. Defaults to false.',
             },
         },
         required: ['task'],
@@ -366,6 +371,7 @@ server.setRequestHandler(CallToolRequestSchema, async request => {
                                     id: task.id,
                                     status: task.status,
                                     model: task.model || task.modelClass,
+                                    readOnly: task.readOnly,
                                     createdAt: task.createdAt,
                                     startedAt: task.startedAt,
                                     completedAt: task.completedAt,
@@ -452,6 +458,7 @@ server.setRequestHandler(CallToolRequestSchema, async request => {
                     status: t.status,
                     task: t.task.substring(0, 100),
                     model: t.model || t.modelClass,
+                    readOnly: t.readOnly,
                     createdAt: t.createdAt,
                     completedAt: t.completedAt,
                 }));
@@ -531,11 +538,12 @@ server.setRequestHandler(CallToolRequestSchema, async request => {
             fullPrompt += `\n\nDesired Output:\n${args.output}`;
         }
 
-        // Create task with tools
+        // Create task with tools - filter based on read_only flag
         const searchTools = await getSearchTools();
-        const customTools = getAllTools();
+        const customTools = args.read_only ? getReadOnlyTools() : getAllTools();
 
-        // Combine search tools and custom tools (bash tool is included in customTools)
+        // Combine search tools and custom tools
+        // Note: Search tools are generally read-only (search, fetch, etc.)
         const allTools = [...searchTools, ...customTools];
 
         // Determine model configuration
@@ -555,14 +563,38 @@ server.setRequestHandler(CallToolRequestSchema, async request => {
             modelClass = 'standard';
         }
 
-        // Create task and return ID immediately
-        const taskId = taskManager.createTask({
+        // Generate task ID from model and task words
+        const modelPart = (modelName || modelClass || 'standard')
+            .toLowerCase()
+            .replace(/[^a-z0-9]/g, '');
+        const taskWords = args.task
+            .toLowerCase()
+            .replace(/[^a-z0-9\s]/g, '')
+            .split(/\s+/)
+            .filter((word: string) => word.length > 2)
+            .slice(0, 3)
+            .join('-');
+
+        const baseTaskId = `${modelPart}-${taskWords}`;
+
+        // Ensure uniqueness by adding a suffix if needed
+        let taskId = baseTaskId;
+        let suffix = 1;
+        while (taskManager.getTask(taskId)) {
+            taskId = `${baseTaskId}-${suffix}`;
+            suffix++;
+        }
+
+        // Create task with custom ID
+        taskManager.createTask({
+            id: taskId,
             model: modelName,
             modelClass: modelClass,
             context: args.context,
             task: args.task,
             output: args.output,
             files: args.files,
+            readOnly: args.read_only,
         });
 
         // Create agent with tools
