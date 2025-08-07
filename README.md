@@ -58,7 +58,7 @@ Add to your MCP configuration:
 
 ### `run_task`
 
-Start a long-running AI task asynchronously. Returns a task ID immediately.
+Start a long-running AI task asynchronously. Returns a task ID immediately (or batch ID for multiple models).
 
 **Parameters:**
 - `task` (required): The task prompt - what to perform

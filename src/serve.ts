@@ -73,13 +73,7 @@ const MODEL_CLASSES = [
 ];
 
 // Popular model name examples
-const POPULAR_MODELS = [
-    'grok-4',
-    'gemini-2.5-pro',
-    'o3',
-    'o3-pro',
-    'claude-opus-4',
-];
+const POPULAR_MODELS = ['gpt-5', 'grok-4', 'gemini-2.5-pro', 'claude-opus-4-1'];
 
 if (process.env.MCP_MODE !== 'true') {
     logger.debug('Creating MCP server instance...');
@@ -112,7 +106,7 @@ const taskManager = TaskManager.getInstance();
 const RUN_TASK_TOOL: Tool = {
     name: 'run_task',
     description:
-        'Start a complex AI task. Perform advanced reasoning and analysis with state of the art LLMs. Returns a task ID immediately to check status and retrieve results.',
+        'Start a complex AI task. Perform advanced reasoning and analysis with state of the art LLMs. Returns a task ID immediately (or batch ID for multiple models) to check status and retrieve results.',
     annotations: {
         title: 'Run AI Task',
         readOnlyHint: false, // Creates and executes a new task
