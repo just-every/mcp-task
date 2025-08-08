@@ -421,8 +421,8 @@ server.setRequestHandler(GetPromptRequestSchema, async request => {
                         type: 'text',
                         text: `Solve a complicated problem by starting multiple tasks with state of the art LLMs.
 
-Use the task MCP to start a batch of tasks using a SINGLE run_task with an array of models:
-- models: ${JSON.stringify(models)}
+Use the task MCP to start a batch of tasks using a SINGLE run_task with:
+- models: an array containing [${models.map(m => `'${m}'`).join(', ')}]
 - read_only: true (so tasks don't edit files but can read them)
 Provide an extremely comprehensive description of the task and context. You should research the background information thoroughly and include any relevant details that could help the models understand the problem better. Include ALL relevant files you find.
 
@@ -466,8 +466,8 @@ ${problem}`,
                         type: 'text',
                         text: `Create a comprehensive plan by leveraging multiple state-of-the-art LLMs working in parallel.
 
-Use the task MCP to start a batch of tasks using run_task with an array of models:
-- models: ${JSON.stringify(models)}
+Use the task MCP to start a batch of tasks using run_task with:
+- models: an array containing [${models.map(m => `'${m}'`).join(', ')}]
 - read_only: true (planning mode - no file modifications)
 Provide a comprehensive description of the task and context. You should research the code base first and provide a general directory structure to give the models a head start of where to look. You can include one or two key files but also allow the models to look up the files they need themselves.
 
@@ -1127,9 +1127,20 @@ server.setRequestHandler(CallToolRequestSchema, async request => {
             throw new Error('Task parameter is required and must be a string');
         }
 
+        // Parse model if it's a JSON string
+        let modelParam = args.model;
+        if (typeof args.model === 'string' && args.model.startsWith('[')) {
+            try {
+                modelParam = JSON.parse(args.model);
+            } catch {
+                // If parsing fails, keep it as is
+                modelParam = args.model;
+            }
+        }
+
         // Check if batch execution (array of models)
-        const isBatch = Array.isArray(args.model);
-        const models = isBatch ? args.model : [args.model || 'standard'];
+        const isBatch = Array.isArray(modelParam);
+        const models = isBatch ? modelParam : [modelParam || 'standard'];
 
         // Generate batch ID for grouped tasks
         const batchId = isBatch
@@ -1141,6 +1152,9 @@ server.setRequestHandler(CallToolRequestSchema, async request => {
                 `Processing ${isBatch ? 'batch' : 'single'} task request`
             );
             logger.debug('Task parameters:', {
+                originalModel: args.model,
+                parsedModel: modelParam,
+                isBatch: isBatch,
                 models: models,
                 batchId: batchId,
                 context: args.context,
