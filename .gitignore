@@ -17,3 +17,6 @@ coding_haiku.txt
 fibonacci.py
 web_app_implementation_plan.md
 summaries/
+
+# Development test scripts (not part of official test suite)
+test-*.js

@@ -244,7 +244,7 @@ const CANCEL_TASK_TOOL: Tool = {
 const WAIT_FOR_TASK_TOOL: Tool = {
     name: 'wait_for_task',
     description:
-        'Wait for a task or any task in a batch to complete, fail, or be cancelled.',
+        'Wait for a task or any task in a batch to complete, fail, or be cancelled. Only waits for tasks that complete AFTER this call is made - ignores tasks that were already completed.',
     annotations: {
         title: 'Wait For Task Completion',
         readOnlyHint: true, // Only reads task status
@@ -431,17 +431,35 @@ Provide an extremely comprehensive description of the task and context. You shou
 This will start all tasks at once and return a batch_id.
 
 To monitor progress, you have two options:
-1. Use wait_for_task with the batch_id to block until the first task completes (efficient)
+1. Use wait_for_task with the batch_id to block until the next task completes (efficient, ignores already-completed tasks)
 2. Use list_tasks with the batch_id to poll and check status manually
 
-As soon as one completes you can try implementing the solution it proposes. If it works, do a check for any remaining tasks which have completed. If they offer suggestions which improve or catch something missing from the solution, consider implementing those as well.
+As soon as one completes you can try implementing the solution it proposes. IMPORTANT: You must thoroughly test and verify that the solution works correctly before considering the problem solved. This includes:
+- Running any relevant tests
+- Verifying the output is correct
+- Checking for edge cases
+- Ensuring no errors occur
 
-If the solution does not work, start a new task with the same model/class and explain the problem, its suggested solution and why it didn't work. Check for any other completed tasks and if they have a different solution try that. Try to keep multiple tasks running in the background until the problem is resolved.
+If the solution does not work or only partially works, start a new task with the same model/class and explain the problem, its suggested solution and why it didn't work. Check for any other completed tasks and if they have a different solution try that. Keep multiple tasks running in the background to explore different approaches.
 
-Once complete, if any tasks are still running, use cancel_task with the batch_id to cancel all remaining tasks. **Do not leave any of your tasks running once you finish.**
+**CRITICAL: Only cancel remaining tasks AFTER you have:**
+1. Implemented a complete solution
+2. Thoroughly tested it works correctly
+3. Verified the problem is 100% solved
+4. Confirmed there are no errors or issues
+
+**NEVER cancel tasks if:**
+- The solution is incomplete or untested
+- You encounter errors during implementation
+- The problem is only partially solved
+- You haven't verified the solution works
+
+If you're unsure whether the problem is fully solved, keep the tasks running and continue working on the solution. It's better to have tasks running in the background than to cancel them prematurely.
 
 Problem to solve:
-${problem}`,
+${problem}
+
+Remember: DO NOT cancel any running tasks until you have 100% confirmed the problem is completely solved with a working, tested solution.`,
                     },
                 },
             ],
@@ -892,6 +910,23 @@ server.setRequestHandler(CallToolRequestSchema, async request => {
 
                 // Wait for batch tasks
                 if (args.batch_id) {
+                    // Track which tasks were already completed when wait started
+                    const initialTasks = taskManager.getAllTasks();
+                    const initialBatchTasks = initialTasks.filter(
+                        t => t.batchId === args.batch_id
+                    );
+
+                    if (initialBatchTasks.length === 0) {
+                        throw new Error(
+                            `No tasks found with batch_id: ${args.batch_id}`
+                        );
+                    }
+
+                    // Record which tasks were already completed at the start
+                    const alreadyCompletedIds = new Set(
+                        initialBatchTasks.filter(isTaskComplete).map(t => t.id)
+                    );
+
                     const completedTasks: any[] = [];
 
                     while (Date.now() - startTime < timeoutMs) {
@@ -906,10 +941,11 @@ server.setRequestHandler(CallToolRequestSchema, async request => {
                             );
                         }
 
-                        // Check for completed tasks
+                        // Check for newly completed tasks (not already completed when wait started)
                         const newlyCompleted = batchTasks.filter(
                             t =>
                                 isTaskComplete(t) &&
+                                !alreadyCompletedIds.has(t.id) &&
                                 !completedTasks.find(ct => ct.id === t.id)
                         );
 
@@ -952,7 +988,7 @@ server.setRequestHandler(CallToolRequestSchema, async request => {
                                 };
                             }
                         } else {
-                            // Return first completed task
+                            // Return first newly completed task
                             if (completedTasks.length > 0) {
                                 const firstCompleted = completedTasks[0];
                                 return {
@@ -962,7 +998,7 @@ server.setRequestHandler(CallToolRequestSchema, async request => {
                                             text: JSON.stringify(
                                                 {
                                                     batch_id: args.batch_id,
-                                                    first_completed: true,
+                                                    newly_completed: true,
                                                     task_id: firstCompleted.id,
                                                     status: firstCompleted.status,
                                                     output: firstCompleted.output,
@@ -975,6 +1011,8 @@ server.setRequestHandler(CallToolRequestSchema, async request => {
                                                                     t
                                                                 )
                                                         ).length,
+                                                    previously_completed:
+                                                        alreadyCompletedIds.size,
                                                     wait_time_seconds:
                                                         Math.round(
                                                             (Date.now() -
