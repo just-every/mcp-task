@@ -1,6 +1,6 @@
 {
   "name": "@just-every/mcp-task",
-  "version": "0.1.11",
+  "version": "0.1.12",
   "description": "MCP server for running long-running AI tasks using @just-every/task",
   "main": "dist/index.js",
   "bin": {
