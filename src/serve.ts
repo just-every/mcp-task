@@ -16,10 +16,12 @@ import { TaskManager } from './utils/task-manager.js';
 import type { Agent } from '@just-every/ensemble';
 // createToolFunction no longer needed - using bash tool from tools.ts instead
 import { getSearchTools } from '@just-every/search';
+import { getCrawlTools } from '@just-every/crawl';
 // exec and promisify no longer needed - using bash tool from tools.ts instead
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { getAllTools, getReadOnlyTools } from './tools.js';
+import { TodoManager } from './todo-manager.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -1142,6 +1144,16 @@ server.setRequestHandler(CallToolRequestSchema, async request => {
         const isBatch = Array.isArray(modelParam);
         const models = isBatch ? modelParam : [modelParam || 'standard'];
 
+        // SAFETY CHECK: Prevent multiple models with write access to avoid file conflicts
+        if (!args.read_only && isBatch && models.length > 1) {
+            throw new Error(
+                'Multiple models with write access (read_only: false) is not allowed to prevent file conflicts. ' +
+                    'Please either:\n' +
+                    '1. Set read_only: true when using multiple models, or\n' +
+                    '2. Use a single model when write access is needed.'
+            );
+        }
+
         // Generate batch ID for grouped tasks
         const batchId = isBatch
             ? `batch-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
@@ -1190,11 +1202,12 @@ server.setRequestHandler(CallToolRequestSchema, async request => {
 
         // Create task with tools - filter based on read_only flag
         const searchTools = await getSearchTools();
+        const crawlTools = await getCrawlTools();
         const customTools = args.read_only ? getReadOnlyTools() : getAllTools();
 
-        // Combine search tools and custom tools
-        // Note: Search tools are generally read-only (search, fetch, etc.)
-        const allTools = [...searchTools, ...customTools];
+        // Combine search tools, crawl tools, and custom tools
+        // Note: Search and crawl tools are generally read-only (search, fetch, etc.)
+        const allTools = [...searchTools, ...crawlTools, ...customTools];
 
         // Get current working directory and file list
         const cwd = process.cwd();
@@ -1264,7 +1277,16 @@ server.setRequestHandler(CallToolRequestSchema, async request => {
                 readOnly: args.read_only,
             });
 
-            // Create agent with tools
+            // Create a TodoManager instance for this specific agent
+            const todoManager = new TodoManager();
+
+            // Get todo tools bound to this instance
+            const todoTools = todoManager.getTodoTools();
+
+            // Combine all tools including todo tools
+            const agentTools = [...allTools, ...todoTools];
+
+            // Create agent with tools and todo support
             const agent = new AgentClass({
                 name: 'TaskRunner',
                 modelClass: modelClass as any,
@@ -1278,8 +1300,18 @@ ${fileList}
 
 You have a range of tools available to you to explore your environment and solve problems.
 
-${args.read_only ? 'You are in READ ONLY mode. You can read files, search the web, and analyze data, but you cannot modify any files or execute commands that change the system state.' : 'You can read files, search the web, and analyze data, and you can also modify files or execute commands that change the system state.'}`,
-                tools: allTools,
+${args.read_only ? 'You are in READ ONLY mode. You can read files, search the web, and analyze data, but you cannot modify any files or execute commands that change the system state.' : 'You can read files, search the web, and analyze data, and you can also modify files or execute commands that change the system state.'}
+
+You have access to todo management tools to help organize and track your work:
+- todo_add: Add new todos (e.g., todo_add(["Task 1"]) or todo_add(["Task 1", "Task 2"]))
+- todo_update: Update status or content (e.g., todo_update("todo-1", {status: "in_progress"}))
+- todo_complete: Mark todos as completed (e.g., todo_complete(["todo-1"]) or todo_complete(["todo-1", "todo-2"]))
+- todo_delete: Remove specific todos (e.g., todo_delete(["todo-1"]) or todo_delete(["todo-1", "todo-2"]))
+- todo_clear: Clear all todos when done
+
+Your current todo list will be shown to you at the start of each message. Use these tools to break down complex tasks and track your progress.`,
+                tools: agentTools,
+                onRequest: todoManager.getOnRequestHandler(),
             });
 
             // Start task execution in background (non-blocking)

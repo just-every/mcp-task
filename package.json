@@ -48,6 +48,7 @@
   "homepage": "https://github.com/just-every/mcp-task#readme",
   "license": "MIT",
   "dependencies": {
+    "@just-every/crawl": "^1.0.6",
     "@just-every/ensemble": "^0.2.154",
     "@just-every/search": "^1.0.10",
     "@just-every/task": "^0.2.42",

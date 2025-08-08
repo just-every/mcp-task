@@ -696,6 +696,6 @@ export function main(): void {
 }
 
 // Run if invoked directly
-if (require.main === module) {
-    main();
-}
+// Note: This check doesn't work the same way in ES modules
+// For ES modules, you'd check import.meta.url === pathToFileURL(process.argv[1]).href
+// But since this is primarily a library, we'll skip the direct execution check

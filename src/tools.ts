@@ -5,25 +5,49 @@
 
 import { createToolFunction } from '@just-every/ensemble';
 import { promises as fs } from 'fs';
+import { readFileSync, writeFileSync, unlinkSync } from 'fs';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import * as path from 'path';
 import { glob } from 'glob';
+import { process_patch, identify_files_needed } from './utils/patcher.js';
 
 const execAsync = promisify(exec);
 
 // File Operations Tools
 
 export const readFileTool = createToolFunction(
-    async (filePath: string, encoding: BufferEncoding = 'utf8') => {
+    async (
+        filePath: string,
+        encoding: BufferEncoding = 'utf8',
+        startLine?: number,
+        endLine?: number
+    ) => {
         try {
             const content = await fs.readFile(filePath, { encoding });
-            return content;
+
+            // If line range is specified, extract only those lines
+            let result = content;
+            if (startLine !== undefined || endLine !== undefined) {
+                const lines = content.split('\n');
+                const start = (startLine || 1) - 1; // Convert to 0-based index
+                const end = endLine || lines.length;
+                result = lines.slice(start, end).join('\n');
+            }
+
+            // Truncate to 50000 characters to avoid overwhelming the LLM
+            if (result.length > 50000) {
+                result =
+                    result.substring(0, 50000) +
+                    '\n\n[Content truncated at 50000 characters]';
+            }
+
+            return result;
         } catch (error: any) {
             return `Error reading file: ${error.message}`;
         }
     },
-    'Read the contents of a file',
+    'Read the contents of a file with optional line range and automatic truncation',
     {
         filePath: {
             type: 'string',
@@ -34,9 +58,18 @@ export const readFileTool = createToolFunction(
             description: 'File encoding (default: utf8)',
             default: 'utf8',
         },
+        startLine: {
+            type: 'number',
+            description: 'Starting line number (1-based, inclusive)',
+        },
+        endLine: {
+            type: 'number',
+            description: 'Ending line number (1-based, inclusive)',
+        },
     },
     'string',
-    'read_file'
+    'read_file',
+    false
 );
 
 export const writeFileTool = createToolFunction(
@@ -69,73 +102,9 @@ export const writeFileTool = createToolFunction(
         },
     },
     'string',
-    'write_file'
+    'write_file',
+    false
 );
-
-export const applyDiffTool = createToolFunction(
-    async (filePath: string, diff: string) => {
-        try {
-            // Read the current file content
-            const currentContent = await fs.readFile(filePath, 'utf8');
-            const lines = currentContent.split('\n');
-            const diffLines = diff.split('\n');
-
-            let lineIndex = 0;
-            let i = 0;
-
-            while (i < diffLines.length) {
-                const line = diffLines[i];
-
-                if (line.startsWith('@@')) {
-                    // Parse the line range
-                    const match = line.match(
-                        /@@ -(\d+),(\d+) \+(\d+),(\d+) @@/
-                    );
-                    if (match) {
-                        lineIndex = parseInt(match[1]) - 1;
-                    }
-                } else if (line.startsWith('-')) {
-                    // Remove line
-                    if (lineIndex < lines.length) {
-                        lines.splice(lineIndex, 1);
-                    }
-                } else if (line.startsWith('+')) {
-                    // Add line
-                    const newLine = line.substring(1);
-                    lines.splice(lineIndex, 0, newLine);
-                    lineIndex++;
-                } else if (line.startsWith(' ')) {
-                    // Context line - just move forward
-                    lineIndex++;
-                }
-
-                i++;
-            }
-
-            const updatedContent = lines.join('\n');
-            await fs.writeFile(filePath, updatedContent, 'utf8');
-
-            return `Diff applied successfully to ${filePath}`;
-        } catch (error: any) {
-            return `Error applying diff: ${error.message}`;
-        }
-    },
-    'Apply a unified diff to a file',
-    {
-        filePath: {
-            type: 'string',
-            description: 'Path to the file to apply diff to',
-        },
-        diff: {
-            type: 'string',
-            description: 'Unified diff format string to apply',
-        },
-    },
-    'string',
-    'apply_diff'
-);
-
-// Claude Code Tool Replicas
 
 export const bashTool = createToolFunction(
     async (command: string, timeout: number = 120000) => {
@@ -194,7 +163,8 @@ export const globTool = createToolFunction(
         },
     },
     'string',
-    'glob'
+    'glob',
+    false
 );
 
 export const grepTool = createToolFunction(
@@ -264,7 +234,8 @@ export const grepTool = createToolFunction(
         },
     },
     'string',
-    'grep'
+    'grep',
+    false
 );
 
 export const lsTool = createToolFunction(
@@ -314,183 +285,142 @@ export const lsTool = createToolFunction(
         },
     },
     'string',
-    'ls'
+    'ls',
+    false
 );
 
-export const editTool = createToolFunction(
-    async (
-        filePath: string,
-        oldString: string,
-        newString: string,
-        replaceAll: boolean = false
-    ) => {
-        try {
-            const content = await fs.readFile(filePath, 'utf8');
+const APPLY_PATCH_TOOL_DESC = `This is a custom utility that makes it more convenient to add, remove, move, or edit code files. \`apply_patch\` effectively allows you to execute a diff/patch against a file, but the format of the diff specification is unique to this task, so pay careful attention to these instructions. To use the \`apply_patch\` command, you should pass a message of the following structure as "input":
 
-            let updatedContent;
-            if (replaceAll) {
-                updatedContent = content.split(oldString).join(newString);
-            } else {
-                const index = content.indexOf(oldString);
-                if (index === -1) {
-                    return `String not found in file: ${oldString}`;
+\`\`\`bash
+apply_patch <<"EOF"
+*** Begin Patch
+[YOUR_PATCH]
+*** End Patch
+EOF
+\`\`\`
+
+Where [YOUR_PATCH] is the actual content of your patch, specified in the following V4A diff format.
+
+*** [ACTION] File: [path/to/file] -> ACTION can be one of Add, Update, or Delete.
+For each snippet of code that needs to be changed, repeat the following:
+[context_before] -> See below for further instructions on context.
+- [old_code] -> Precede the old code with a minus sign.
++ [new_code] -> Precede the new, replacement code with a plus sign.
+[context_after] -> See below for further instructions on context.
+
+For instructions on [context_before] and [context_after]:
+- By default, show 3 lines of code immediately above and 3 lines immediately below each change. If a change is within 3 lines of a previous change, do NOT duplicate the first change's [context_after] lines in the second change's [context_before] lines.
+- If 3 lines of context is insufficient to uniquely identify the snippet of code within the file, use the @@ operator to indicate the class or function to which the snippet belongs. For instance, we might have:
+@@ class BaseClass
+[3 lines of pre-context]
+- [old_code]
++ [new_code]
+[3 lines of post-context]
+
+- If a code block is repeated so many times in a class or function such that even a single @@ statement and 3 lines of context cannot uniquely identify the snippet of code, you can use multiple \`@@\` statements to jump to the right context. For instance:
+
+@@ class BaseClass
+@@     def method():
+[3 lines of pre-context]
+- [old_code]
++ [new_code]
+[3 lines of post-context]
+
+Note, then, that we do not use line numbers in this diff format, as the context is enough to uniquely identify code. An example of a message that you might pass as "input" to this function, in order to apply a patch, is shown below.
+
+\`\`\`bash
+apply_patch <<"EOF"
+*** Begin Patch
+*** Update File: pygorithm/searching/binary_search.py
+@@ class BaseClass
+@@     def search():
+-          pass
++          raise NotImplementedError()
+
+@@ class Subclass
+@@     def search():
+-          pass
++          raise NotImplementedError()
+
+*** End Patch
+EOF
+\`\`\``;
+
+export const applyPatchTool = createToolFunction(
+    async (input: string) => {
+        try {
+            // Extract the patch text from the input
+            // Handle both direct patch text and the bash heredoc format
+            let patchText = input.trim();
+
+            // If it looks like a bash command with heredoc, extract the patch
+            if (patchText.includes('apply_patch') && patchText.includes('<<')) {
+                const startMarker = '*** Begin Patch';
+                const endMarker = '*** End Patch';
+                const startIdx = patchText.indexOf(startMarker);
+                const endIdx = patchText.lastIndexOf(endMarker);
+
+                if (startIdx !== -1 && endIdx !== -1) {
+                    patchText = patchText.substring(
+                        startIdx,
+                        endIdx + endMarker.length
+                    );
                 }
-                updatedContent =
-                    content.substring(0, index) +
-                    newString +
-                    content.substring(index + oldString.length);
             }
 
-            await fs.writeFile(filePath, updatedContent, 'utf8');
-            return `File edited successfully: ${filePath}`;
-        } catch (error: any) {
-            return `Error editing file: ${error.message}`;
-        }
-    },
-    'Replace text in a file',
-    {
-        filePath: {
-            type: 'string',
-            description: 'Path to the file to edit',
-        },
-        oldString: {
-            type: 'string',
-            description: 'Text to replace',
-        },
-        newString: {
-            type: 'string',
-            description: 'Replacement text',
-        },
-        replaceAll: {
-            type: 'boolean',
-            description: 'Replace all occurrences',
-            default: false,
-        },
-    },
-    'string',
-    'edit'
-);
+            // The patcher expects a specific format starting with *** Begin Patch
+            if (!patchText.startsWith('*** Begin Patch')) {
+                return 'Error: Invalid patch format. Patch must start with "*** Begin Patch"';
+            }
 
-export const multiEditTool = createToolFunction(
-    async (
-        filePath: string,
-        edits: Array<{
-            oldString: string;
-            newString: string;
-            replaceAll?: boolean;
-        }>
-    ) => {
-        try {
-            let content = await fs.readFile(filePath, 'utf8');
+            // Identify files that will be affected
+            const filesNeeded = identify_files_needed(patchText);
 
-            for (const edit of edits) {
-                if (edit.replaceAll) {
-                    content = content
-                        .split(edit.oldString)
-                        .join(edit.newString);
-                } else {
-                    const index = content.indexOf(edit.oldString);
-                    if (index === -1) {
-                        return `String not found in file: ${edit.oldString}`;
+            // Use the robust patcher implementation with sync operations
+            process_patch(
+                patchText,
+                // Read function (sync)
+                (p: string) => {
+                    try {
+                        return readFileSync(p, 'utf8');
+                    } catch (error: any) {
+                        if (error.code === 'ENOENT') {
+                            // File doesn't exist, return empty string for creation
+                            return '';
+                        }
+                        throw error;
                     }
-                    content =
-                        content.substring(0, index) +
-                        edit.newString +
-                        content.substring(index + edit.oldString.length);
-                }
-            }
-
-            await fs.writeFile(filePath, content, 'utf8');
-            return `File edited successfully with ${edits.length} changes: ${filePath}`;
-        } catch (error: any) {
-            return `Error editing file: ${error.message}`;
-        }
-    },
-    'Apply multiple edits to a file',
-    {
-        filePath: {
-            type: 'string',
-            description: 'Path to the file to edit',
-        },
-        edits: {
-            type: 'array',
-            description: 'Array of edit operations',
-            items: {
-                type: 'object',
-                properties: {
-                    oldString: {
-                        type: 'string',
-                        description: 'Text to replace',
-                    },
-                    newString: {
-                        type: 'string',
-                        description: 'Replacement text',
-                    },
-                    replaceAll: {
-                        type: 'boolean',
-                        description: 'Replace all occurrences',
-                        default: false,
-                    },
                 },
-                required: ['oldString', 'newString'],
-            },
-        },
-    },
-    'string',
-    'multi_edit'
-);
-
-export const webFetchTool = createToolFunction(
-    async (
-        url: string,
-        method: string = 'GET',
-        headersJson?: string,
-        body?: string
-    ) => {
-        try {
-            let headers: Record<string, string> | undefined;
-            if (headersJson) {
-                try {
-                    headers = JSON.parse(headersJson);
-                } catch {
-                    return 'Error: Invalid headers JSON format';
+                // Write function (sync)
+                (p: string, content: string) => {
+                    // Create directory if needed
+                    const dir = path.dirname(p);
+                    if (dir && dir !== '.') {
+                        fs.mkdir(dir, { recursive: true }).catch(() => {});
+                    }
+                    writeFileSync(p, content, 'utf8');
+                },
+                // Remove function (sync)
+                (p: string) => {
+                    unlinkSync(p);
                 }
-            }
+            );
 
-            const response = await fetch(url, {
-                method,
-                headers,
-                body: body ? body : undefined,
-            });
-
-            const text = await response.text();
-            return `Status: ${response.status}\nResponse:\n${text}`;
+            return `Patch applied successfully. Files affected: ${filesNeeded.join(', ')}`;
         } catch (error: any) {
-            return `Error fetching URL: ${error.message}`;
+            return `Error applying patch: ${error.message}`;
         }
     },
-    'Fetch content from a URL',
+    APPLY_PATCH_TOOL_DESC,
     {
-        url: {
+        input: {
             type: 'string',
-            description: 'URL to fetch',
-        },
-        method: {
-            type: 'string',
-            description: 'HTTP method',
-            default: 'GET',
-        },
-        headersJson: {
-            type: 'string',
-            description: 'Request headers as JSON string',
-        },
-        body: {
-            type: 'string',
-            description: 'Request body',
+            description: 'The apply_patch command that you wish to execute.',
         },
     },
     'string',
-    'web_fetch'
+    'apply_patch',
+    false
 );
 
 // Export all tools as an array
@@ -498,24 +428,22 @@ export const getAllTools = () => [
     // File operations
     readFileTool,
     writeFileTool,
-    applyDiffTool,
+    applyPatchTool,
 
     // Claude Code replicas
     bashTool,
     globTool,
     grepTool,
     lsTool,
-    editTool,
-    multiEditTool,
-    webFetchTool,
+    // Note: Todo tools are now created per-agent instance via TodoManager
 ];
 
-// Export read-only tools (tools that don't modify state)
+// Export read-only tools (tools that don't modify file system)
 export const getReadOnlyTools = () => [
     // Read/search operations only
     readFileTool,
     globTool,
     grepTool,
     lsTool,
-    webFetchTool,
+    // Note: Todo tools are now created per-agent instance via TodoManager
 ];
