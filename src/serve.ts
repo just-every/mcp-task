@@ -106,7 +106,7 @@ const taskManager = TaskManager.getInstance();
 const RUN_TASK_TOOL: Tool = {
     name: 'run_task',
     description:
-        'Start a complex AI task. Perform advanced reasoning and analysis with state of the art LLMs. Returns a task ID immediately (or batch ID for multiple models) to check status and retrieve results.',
+        'Start a complex AI task. Perform advanced reasoning and analysis with state of the art LLMs. Start multiple tasks at once by using an array for model. Returns a task ID immediately (or batch ID for multiple models) to check status and retrieve results.',
     annotations: {
         title: 'Run AI Task',
         readOnlyHint: false, // Creates and executes a new task
@@ -321,6 +321,28 @@ const LIST_TASKS_TOOL: Tool = {
     },
 };
 
+// Helper function to check available API keys and determine models
+function getAvailableModels(): {
+    openai: boolean;
+    grok: boolean;
+    google: boolean;
+    available: string[];
+} {
+    const openai = !!process.env.OPENAI_API_KEY;
+    const grok = !!process.env.GROK_API_KEY || !!process.env.XAI_API_KEY;
+    const google =
+        !!process.env.GOOGLE_API_KEY ||
+        !!process.env.GOOGLE_GENAI_API_KEY ||
+        !!process.env.GEMINI_API_KEY;
+
+    const available: string[] = [];
+    if (openai) available.push('gpt-5');
+    if (grok) available.push('grok-4');
+    if (google) available.push('gemini-2.5-pro');
+
+    return { openai, grok, google, available };
+}
+
 // Prompt definitions
 const SOLVE_PROMPT: Prompt = {
     name: 'solve',
@@ -335,13 +357,38 @@ const SOLVE_PROMPT: Prompt = {
     ],
 };
 
+const PLAN_PROMPT: Prompt = {
+    name: 'plan',
+    description:
+        'Create a comprehensive plan using multiple state-of-the-art LLMs working in parallel',
+    arguments: [
+        {
+            name: 'task',
+            description: 'The task to plan',
+            required: true,
+        },
+    ],
+};
+
+const CODE_PROMPT: Prompt = {
+    name: 'code',
+    description: 'Generate or modify code using a state-of-the-art coding LLM',
+    arguments: [
+        {
+            name: 'task',
+            description: 'The coding task to perform',
+            required: true,
+        },
+    ],
+};
+
 // Handle prompt listing
 server.setRequestHandler(ListPromptsRequestSchema, async () => {
     if (process.env.MCP_MODE !== 'true') {
         logger.debug('Received ListPrompts request');
     }
     return {
-        prompts: [SOLVE_PROMPT],
+        prompts: [SOLVE_PROMPT, PLAN_PROMPT, CODE_PROMPT],
     };
 });
 
@@ -352,11 +399,18 @@ server.setRequestHandler(GetPromptRequestSchema, async request => {
     }
 
     const { name, arguments: args } = request.params;
+    const availableModels = getAvailableModels();
 
     if (name === 'solve') {
         const problem =
             args?.problem ||
             'Figure out what problem needs solving from the recent conversation';
+
+        // Use available specific models or fall back to reasoning class
+        const models =
+            availableModels.available.length > 0
+                ? availableModels.available.concat(['reasoning'])
+                : ['reasoning'];
 
         return {
             description: 'Multi-model problem solving strategy',
@@ -367,9 +421,10 @@ server.setRequestHandler(GetPromptRequestSchema, async request => {
                         type: 'text',
                         text: `Solve a complicated problem by starting multiple tasks with state of the art LLMs.
 
-Use the task MCP to start a batch of tasks using run_task with an array of models:
-- models: ['gpt-5', 'gemini-2.5-pro', 'grok-4', 'reasoning']
+Use the task MCP to start a batch of tasks using a SINGLE run_task with an array of models:
+- models: ${JSON.stringify(models)}
 - read_only: true (so tasks don't edit files but can read them)
+Provide an extremely comprehensive description of the task and context. You should research the background information thoroughly and include any relevant details that could help the models understand the problem better. Include ALL relevant files you find.
 
 This will start all tasks at once and return a batch_id.
 
@@ -377,10 +432,99 @@ To monitor progress, you have two options:
 1. Use wait_for_task with the batch_id to block until the first task completes (efficient)
 2. Use list_tasks with the batch_id to poll and check status manually
 
-As soon as one completes you can try implementing the solution it proposes. If it works, use cancel_task with the batch_id to cancel all remaining tasks. If it fails, start a new task with the same model/class and explain the problem, its suggested solution and why it didn't work. Check for any other completed tasks and if they have a different solution try that. Try to keep multiple tasks running in the background until the problem is resolved.
+As soon as one completes you can try implementing the solution it proposes. If it works, do a check for any remaining tasks which have completed. If they offer suggestions which improve or catch something missing from the solution, consider implementing those as well.
+
+If the solution does not work, start a new task with the same model/class and explain the problem, its suggested solution and why it didn't work. Check for any other completed tasks and if they have a different solution try that. Try to keep multiple tasks running in the background until the problem is resolved.
+
+Once complete, if any tasks are still running, use cancel_task with the batch_id to cancel all remaining tasks. **Do not leave any of your tasks running once you finish.**
 
 Problem to solve:
 ${problem}`,
+                    },
+                },
+            ],
+        };
+    }
+
+    if (name === 'plan') {
+        const task =
+            args?.task ||
+            'Figure out what needs planning from the recent conversation';
+
+        // Use available specific models or fall back to reasoning class
+        const models =
+            availableModels.available.length > 0
+                ? availableModels.available
+                : ['reasoning'];
+
+        return {
+            description: 'Multi-model comprehensive planning strategy',
+            messages: [
+                {
+                    role: 'user',
+                    content: {
+                        type: 'text',
+                        text: `Create a comprehensive plan by leveraging multiple state-of-the-art LLMs working in parallel.
+
+Use the task MCP to start a batch of tasks using run_task with an array of models:
+- models: ${JSON.stringify(models)}
+- read_only: true (planning mode - no file modifications)
+Provide a comprehensive description of the task and context. You should research the code base first and provide a general directory structure to give the models a head start of where to look. You can include one or two key files but also allow the models to look up the files they need themselves.
+
+This will start all tasks at once and return a batch_id.
+
+IMPORTANT: Use wait_for_task with the batch_id and return_all: true to wait for ALL tasks to complete. This ensures you get all perspectives before formulating the final plan. If a task fails or times out, you can ignore it and continue with the other results.
+
+Once all models have completed:
+1. Analyze all the different plans and recommendations
+2. Identify common themes and best practices from each model
+3. Synthesize the best elements from each plan
+4. Create a final, comprehensive plan that incorporates the strongest recommendations from all models
+5. Present the final plan with clear steps and rationale
+
+Task to plan:
+${task}`,
+                    },
+                },
+            ],
+        };
+    }
+
+    if (name === 'code') {
+        const task =
+            args?.task ||
+            'Figure out what coding task needs to be done from the recent conversation';
+
+        // Use GPT-5 if available, otherwise fall back to code class
+        const model = availableModels.openai ? 'gpt-5' : 'code';
+
+        return {
+            description:
+                'Code generation and modification with state-of-the-art coding LLM',
+            messages: [
+                {
+                    role: 'user',
+                    content: {
+                        type: 'text',
+                        text: `Generate or modify code using a state-of-the-art coding LLM.
+
+Use the task MCP to start a task using run_task with:
+- model: '${model}'
+- read_only: false (allow file modifications and code execution)
+Provide a comprehensive description of the task and context. You should research the code base first to give the model a head start of where to look. You can include one or two key files but also allow the models to look up the files they need themselves.
+
+The task will execute with full permissions to:
+- Read and analyze existing code
+- Create new files
+- Modify existing files
+- Execute commands
+- Run tests
+- Install dependencies
+
+Monitor the task progress using check_task_status and wait for completion with wait_for_task.
+
+Coding task to perform:
+${task}`,
                     },
                 },
             ],
