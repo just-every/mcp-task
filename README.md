@@ -5,6 +5,10 @@
 
 Async MCP server for running long-running AI tasks with real-time progress monitoring using [@just-every/task](https://github.com/just-every/task).
 
+<a href="https://glama.ai/mcp/servers/@just-every/mcp-task">
+  <img width="380" height="200" src="https://glama.ai/mcp/servers/@just-every/mcp-task/badge" alt="Task MCP server" />
+</a>
+
 ## Quick Start
 
 ### 1. Create or use an environment file
