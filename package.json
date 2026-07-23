@@ -77,6 +77,7 @@
   },
   "type": "module",
   "overrides": {
+    "@hono/node-server": "2.0.11",
     "esbuild": "0.28.1",
     "sharp": "0.35.3"
   }
