@@ -70,7 +70,7 @@
     "tsx": "^4.22.4",
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.34.0",
-    "vitest": "^3.2.6"
+    "vitest": "^4.1.11"
   },
   "engines": {
     "node": ">=20.0.0"
@@ -82,7 +82,7 @@
     "ip-address": "10.3.1",
     "sharp": "0.35.3",
     "undici": "7.29.0",
-    "hono": "4.12.34",
+    "hono": "4.13.5",
     "fast-uri": "3.1.6"
   }
 }
